@@ -14,63 +14,77 @@
       "type": "wokwi-pir-motion-sensor",
       "id": "pir1",
       "top": -140,
-      "left": -180,
+      "left": -260,
       "attrs": {}
     },
     {
       "type": "wokwi-hc-sr04",
       "id": "sonar1",
       "top": -140,
-      "left": 100,
+      "left": 180,
       "attrs": { "distance": "80" }
+    },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd1",
+      "top": -260,
+      "left": -50,
+      "attrs": { "pins": "i2c" }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "servo1",
+      "top": 240,
+      "left": -80,
+      "attrs": { "hornColor": "blue" }
     },
     {
       "type": "wokwi-buzzer",
       "id": "bz1",
       "top": 200,
-      "left": -180,
+      "left": -260,
       "attrs": { "volume": "0.1" }
     },
     {
       "type": "wokwi-led",
       "id": "led_alarm",
       "top": 180,
-      "left": 120,
+      "left": 160,
       "attrs": { "color": "yellow", "label": "Alarm LED" }
     },
     {
       "type": "wokwi-led",
       "id": "led_armed",
       "top": 250,
-      "left": 120,
+      "left": 160,
       "attrs": { "color": "green", "label": "ARM LED" }
     },
     {
       "type": "wokwi-resistor",
       "id": "r_alarm",
       "top": 190,
-      "left": 50,
+      "left": 90,
       "attrs": { "resistance": "220" }
     },
     {
       "type": "wokwi-resistor",
       "id": "r_armed",
       "top": 260,
-      "left": 50,
+      "left": 90,
       "attrs": { "resistance": "220" }
     },
     {
       "type": "wokwi-resistor",
       "id": "r_div1",
       "top": -40,
-      "left": 180,
+      "left": 260,
       "attrs": { "resistance": "1000" }
     },
     {
       "type": "wokwi-resistor",
       "id": "r_div2",
       "top": 10,
-      "left": 180,
+      "left": 260,
       "attrs": { "resistance": "2000" }
     }
   ],
@@ -89,6 +103,15 @@
     [ "r_div1:2", "esp:18", "purple", [ "v0" ] ],
     [ "r_div1:2", "r_div2:1", "purple", [ "v0" ] ],
     [ "r_div2:2", "esp:GND.1", "black", [ "v0" ] ],
+
+    [ "esp:5V", "lcd1:VCC", "red", [ "v0" ] ],
+    [ "esp:GND.1", "lcd1:GND", "black", [ "v0" ] ],
+    [ "esp:21", "lcd1:SDA", "green", [ "v0" ] ],
+    [ "esp:22", "lcd1:SCL", "blue", [ "v0" ] ],
+
+    [ "esp:5V", "servo1:V+", "red", [ "v0" ] ],
+    [ "esp:GND.2", "servo1:GND", "black", [ "v0" ] ],
+    [ "esp:19", "servo1:PWM", "orange", [ "v0" ] ],
 
     [ "esp:23", "bz1:2", "orange", [ "v0" ] ],
     [ "esp:GND.2", "bz1:1", "black", [ "v0" ] ],

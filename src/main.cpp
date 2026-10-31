@@ -4,6 +4,9 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <ESP32Servo.h>
 #include <time.h>
 #include <mbedtls/md.h>
 #include <mbedtls/base64.h>
@@ -19,6 +22,7 @@ struct SharedState {
     bool     armed = false;
     bool     alarm = false;
     bool     pir = false;
+    bool     doorLocked = false;
     float    distanceCm = -1.0f;
     uint32_t alarmSinceMs = 0;
     uint16_t thresholdCm = Config::DEFAULT_DISTANCE_THRESHOLD_CM;
@@ -29,15 +33,20 @@ struct AlertEvent {
     float distanceCm;
 };
 
-static SharedState   g;
-static portMUX_TYPE  gMux = portMUX_INITIALIZER_UNLOCKED;
-static QueueHandle_t alertQueue;
-static Preferences   prefs;
-static volatile bool reportPending = true;
+static SharedState        g;
+static portMUX_TYPE       gMux = portMUX_INITIALIZER_UNLOCKED;
+static QueueHandle_t      alertQueue;
+static Preferences        prefs;
+static volatile bool      reportPending = true;
 
-static WiFiClientSecure tlsClient;
-static PubSubClient     mqtt(tlsClient);
-static time_t           sasExpiry = 0;
+// Thiết bị ngoại vi I2C và Servo
+static LiquidCrystal_I2C  lcd(Config::LCD_I2C_ADDR, Config::LCD_COLS, Config::LCD_ROWS);
+static Servo              servoLock;
+
+// Kết nối mạng TLS & MQTT
+static WiFiClientSecure   tlsClient;
+static PubSubClient       mqtt(tlsClient);
+static time_t             sasExpiry = 0;
 
 // Lấy bản sao an toàn của SharedState (Snapshot)
 static SharedState snapshot() {
@@ -56,15 +65,32 @@ static uint64_t getEpochMs() {
 }
 
 // ============================================================================
-// 2. CÁC HÀM XỬ LÝ LỆNH ĐIỀU KHIỂN TỪ XA
+// 2. CÁC HÀM XỬ LÝ LỆNH ĐIỀU KHIỂN CHẤP HÀNH (SERVO, CÒI, TRẠNG THÁI)
 // ============================================================================
+static void setLockState(bool locked) {
+    portENTER_CRITICAL(&gMux);
+    g.doorLocked = locked;
+    portEXIT_CRITICAL(&gMux);
+
+    // Điều khiển góc quay Servo SG90
+    servoLock.write(locked ? Config::SERVO_LOCK_ANGLE : Config::SERVO_UNLOCK_ANGLE);
+    reportPending = true;
+    Serial.printf("[ACTUATOR] Servo chot cua -> %s (Goc %d do)\n",
+                  locked ? "DONG KHOA" : "MO KHOA",
+                  locked ? Config::SERVO_LOCK_ANGLE : Config::SERVO_UNLOCK_ANGLE);
+}
+
 static void setArmed(bool armed) {
     portENTER_CRITICAL(&gMux);
     g.armed = armed;
     if (!armed) {
-        g.alarm = false;            // DISARM luôn lập tức tắt còi
+        g.alarm = false;            // DISARM luôn lập tức ngắt còi hú
     }
     portEXIT_CRITICAL(&gMux);
+
+    // Cơ chế an toàn tự động: BẬT bảo vệ -> Tự động đóng chốt cửa
+    setLockState(armed);
+
     prefs.putBool("armed", armed);  // Lưu vào Flash NVS chống mất điện
     reportPending = true;
     Serial.printf("[SYSTEM] Che do bao ve: %s\n", armed ? "ARMED (BAT)" : "DISARMED (TAT)");
@@ -108,8 +134,8 @@ static void sensorTask(void* pvParameters) {
     TickType_t lastWakeTime = xTaskGetTickCount();
 
     for (;;) {
-        const bool  pirVal  = (digitalRead(Config::PIN_PIR) == HIGH);
-        const float distVal = readDistanceCm();
+        const bool  pirVal     = (digitalRead(Config::PIN_PIR) == HIGH);
+        const float distVal    = readDistanceCm();
         const bool  warmupDone = (millis() > Config::PIR_WARMUP_MS);
         const char* alertSource = nullptr;
 
@@ -152,9 +178,56 @@ static void sensorTask(void* pvParameters) {
 }
 
 // ============================================================================
-// 4. CORE 1: TÁC VỤ CÒI HÚ & ĐÈN BÁO (Priority 3 - ƯU TIÊN CAO NHẤT)
-// Chạy độc lập hoàn toàn với Wi-Fi/Azure (Mất mạng vẫn hú còi báo động tại chỗ)
+// 4. CORE 1: TÁC VỤ CÒI HÚ, ĐÈN BÁO & HIỂN THỊ LCD 16X2 (Priority 3)
 // ============================================================================
+static void updateLcdDisplay(const SharedState& s) {
+    static unsigned long lastLcdUpdate = 0;
+    const unsigned long now = millis();
+
+    if (now - lastLcdUpdate < Config::LCD_REFRESH_MS) return;
+    lastLcdUpdate = now;
+
+    char line1[17];
+    char line2[17];
+
+    if (s.alarm) {
+        // Màn hình khi có trộm: Nhấp nháy cảnh báo khẩn cấp
+        const bool blink = ((now / 300) % 2 == 0);
+        if (blink) {
+            snprintf(line1, sizeof(line1), "!! CANH BAO !!  ");
+            snprintf(line2, sizeof(line2), "PHAT HIEN TROM! ");
+        } else {
+            snprintf(line1, sizeof(line1), ">> ALARM ACTIVE ");
+            if (s.pir) {
+                snprintf(line2, sizeof(line2), "NGUON: PIR CHUYEN");
+            } else {
+                snprintf(line2, sizeof(line2), "NGUON: SONAR %dcm", (int)s.distanceCm);
+            }
+        }
+    } else {
+        // Dòng 1: Trạng thái hệ thống + Chốt khóa Servo
+        if (s.armed) {
+            snprintf(line1, sizeof(line1), "ARMED  |KHOA CUA");
+        } else {
+            snprintf(line1, sizeof(line1), "DISARM | MO CUA ");
+        }
+
+        // Dòng 2: Chỉ số cảm biến (Khoảng cách + PIR)
+        if (s.distanceCm >= 0.0f) {
+            snprintf(line2, sizeof(line2), "D:%3dcm|PIR:%s",
+                     (int)s.distanceCm, s.pir ? "CO " : "KO ");
+        } else {
+            snprintf(line2, sizeof(line2), "D: --- |PIR:%s",
+                     s.pir ? "CO " : "KO ");
+        }
+    }
+
+    lcd.setCursor(0, 0);
+    lcd.print(line1);
+    lcd.setCursor(0, 1);
+    lcd.print(line2);
+}
+
 static void alarmOutputTask(void* pvParameters) {
     for (;;) {
         const SharedState s = snapshot();
@@ -171,6 +244,9 @@ static void alarmOutputTask(void* pvParameters) {
             digitalWrite(Config::PIN_LED_ALARM, LOW);
             digitalWrite(Config::PIN_BUZZER, LOW);
         }
+
+        // 3. Cập nhật màn hình LCD 16x2
+        updateLcdDisplay(s);
 
         // BẮT BUỘC nhường CPU 20ms cho task khác và reset Watchdog Timer
         vTaskDelay(pdMS_TO_TICKS(20));
@@ -201,7 +277,6 @@ static String generateSasToken(time_t expiry) {
     const String resourceUri = urlEncode(String(IOTHUB_HOST) + "/devices/" + DEVICE_ID);
     const String toSign = resourceUri + "\n" + String((long)expiry);
 
-    // Giải mã Base64 của Primary Key
     unsigned char decodedKey[64];
     size_t keyLen = 0;
     if (mbedtls_base64_decode(decodedKey, sizeof(decodedKey), &keyLen,
@@ -209,12 +284,10 @@ static String generateSasToken(time_t expiry) {
         return "";
     }
 
-    // Tính HMAC-SHA256
     unsigned char hmac[32];
     mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), decodedKey, keyLen,
                     (const unsigned char*)toSign.c_str(), toSign.length(), hmac);
 
-    // Mã hóa Base64 kết quả băm
     unsigned char b64Hmac[64];
     size_t b64Len = 0;
     mbedtls_base64_encode(b64Hmac, sizeof(b64Hmac) - 1, &b64Len, hmac, sizeof(hmac));
@@ -229,9 +302,10 @@ static String generateSasToken(time_t expiry) {
 static void publishReportedTwin() {
     const SharedState s = snapshot();
     JsonDocument doc;
-    doc["armed"] = s.armed;
+    doc["armed"]               = s.armed;
+    doc["doorLocked"]          = s.doorLocked;
     doc["distanceThresholdCm"] = s.thresholdCm;
-    doc["fw"] = Config::FIRMWARE_VERSION;
+    doc["fw"]                  = Config::FIRMWARE_VERSION;
 
     String body;
     serializeJson(doc, body);
@@ -263,7 +337,12 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
         if (method == "setArm") {
             const bool armValue = req["value"] | false;
             setArmed(armValue);
-            res["armed"] = armValue;
+            res["armed"]      = armValue;
+            res["doorLocked"] = armValue;
+        } else if (method == "setLock") {
+            const bool lockValue = req["value"] | false;
+            setLockState(lockValue);
+            res["doorLocked"] = lockValue;
         } else if (method == "silenceAlarm") {
             silenceAlarm();
             res["alarm"] = false;
@@ -406,6 +485,7 @@ static void networkTask(void* pvParameters) {
 
             JsonDocument doc;
             doc["armed"]       = s.armed;
+            doc["doorLocked"]  = s.doorLocked;
             doc["alarm"]       = s.alarm;
             doc["pir"]         = s.pir;
             doc["distanceCm"]  = (s.distanceCm < 0) ? -1.0f : roundf(s.distanceCm * 10) / 10.0f;
@@ -414,8 +494,8 @@ static void networkTask(void* pvParameters) {
             doc["uptimeS"]     = now / 1000;
 
             publishD2C("telemetry", doc);
-            Serial.printf("[AZURE-CORE0] Telemetry -> Sonar: %.1f cm, PIR: %d, ARM: %d\n",
-                          doc["distanceCm"].as<float>(), s.pir, s.armed);
+            Serial.printf("[AZURE-CORE0] Telemetry -> Sonar: %.1f cm, PIR: %d, ARM: %d, Lock: %d\n",
+                          doc["distanceCm"].as<float>(), s.pir, s.armed, s.doorLocked);
         }
 
         // 7. Gửi cập nhật Reported Twin khi có thay đổi trạng thái
@@ -434,10 +514,10 @@ void setup() {
     Serial.begin(115200);
     Serial.println("\n=======================================================");
     Serial.println("  HE THONG CANH BAO CHONG TROM IOT (ESP32 - AZURE)");
-    Serial.printf("  Firmware: v%s | FreeRTOS Dual-Core Enabled\n", Config::FIRMWARE_VERSION);
+    Serial.printf("  Firmware: v%s | Actuators: Buzzer + Servo + LCD\n", Config::FIRMWARE_VERSION);
     Serial.println("=======================================================");
 
-    // Khởi tạo các chân GPIO
+    // Khởi tạo các chân GPIO cảm biến và còi
     pinMode(Config::PIN_PIR, INPUT);
     pinMode(Config::PIN_US_TRIG, OUTPUT);
     pinMode(Config::PIN_US_ECHO, INPUT);
@@ -450,10 +530,34 @@ void setup() {
     digitalWrite(Config::PIN_LED_ALARM, LOW);
     digitalWrite(Config::PIN_LED_ARMED, LOW);
 
+    // Khởi tạo giao tiếp I2C và Màn hình LCD 16x2
+    Wire.begin(Config::PIN_I2C_SDA, Config::PIN_I2C_SCL);
+    lcd.init();
+    lcd.backlight();
+    lcd.setCursor(0, 0);
+    lcd.print("  HE THONG IOT  ");
+    lcd.setCursor(0, 1);
+    lcd.print(" CHONG TROM v2.1");
+
+    // Khởi tạo Động cơ Servo SG90 (chốt cửa)
+    ESP32PWM::allocateTimer(0);
+    ESP32PWM::allocateTimer(1);
+    ESP32PWM::allocateTimer(2);
+    ESP32PWM::allocateTimer(3);
+    servoLock.setPeriodHertz(50); // Tiêu chuẩn 50Hz cho Servo SG90
+    servoLock.attach(Config::PIN_SERVO, 500, 2400);
+
     // Đọc trạng thái lưu trữ NVS
     prefs.begin("chongtrom", false);
     g.armed       = prefs.getBool("armed", false);
+    g.doorLocked  = g.armed; // Mặc định khóa nếu đang armed
     g.thresholdCm = prefs.getUShort("thr", Config::DEFAULT_DISTANCE_THRESHOLD_CM);
+
+    // Đặt vị trí ban đầu của Servo chốt cửa
+    servoLock.write(g.doorLocked ? Config::SERVO_LOCK_ANGLE : Config::SERVO_UNLOCK_ANGLE);
+
+    delay(1000); // Giữ màn hình khởi động 1 giây
+    lcd.clear();
 
     // Khởi tạo hàng đợi cảnh báo FreeRTOS (tối đa 8 sự kiện)
     alertQueue = xQueueCreate(8, sizeof(AlertEvent));
@@ -465,8 +569,8 @@ void setup() {
     // Core 1: Đọc cảm biến non-blocking (Priority 2)
     xTaskCreatePinnedToCore(sensorTask, "sensorTask", 4096, nullptr, 2, nullptr, 1);
 
-    // Core 1: Phát còi & LED cảnh báo (Priority 3 - Ưu tiên cao nhất)
-    xTaskCreatePinnedToCore(alarmOutputTask, "alarmOutputTask", 2048, nullptr, 3, nullptr, 1);
+    // Core 1: Phát còi, LED cảnh báo & Màn hình LCD (Priority 3 - Ưu tiên cao nhất)
+    xTaskCreatePinnedToCore(alarmOutputTask, "alarmOutputTask", 3072, nullptr, 3, nullptr, 1);
 }
 
 void loop() {

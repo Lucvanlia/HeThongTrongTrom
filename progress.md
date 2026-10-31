@@ -24,10 +24,10 @@
    - Cập nhật `.agents/rules/iot-enterprise-architecture.md` chuẩn 100% Microsoft Azure.
    - Cập nhật `.gitignore` loại trừ các thư mục cache `.pio`, `graphify-out/cache/`, secrets và env local.
 
-5. **Hiện thực hóa Firmware Dual-Core & Mô phỏng Wokwi (Phase 2 & 3)**:
-   - Cập nhật `platformio.ini`: Tích hợp thư viện `PubSubClient@^2.8` và `ArduinoJson@^7.0.0`, cấu hình tốc độ nạp `921600` và baud rate `115200`.
-   - Tạo file `include/Config.h`: Định nghĩa chân GPIO chuẩn (PIR GPIO 13, HC-SR04 TRIG 5 / ECHO 18, Buzzer GPIO 23, LED Vàng GPIO 2, LED Xanh GPIO 4).
-   - Tạo file `src/main.cpp`: Lập trình FreeRTOS dual-core hoàn chỉnh (Core 0 mạng & Azure IoT Hub TLS 8883, Core 1 cảm biến & còi hú báo động).
-   - Biên dịch thành công 100% với PlatformIO (`pio.exe run`): RAM 14.1% (46.2KB), Flash 70.3% (920KB).
-   - Thiết lập mô phỏng Wokwi: Tạo `wokwi.toml` và `diagram.json` mô phỏng đầy đủ mạch phần cứng, sẵn sàng chạy ngay trên VS Code.
+6. **Tích hợp Chốt Cửa Thông Minh (Servo SG90) & Màn Hình LCD 1602 I2C**:
+   - Cập nhật `platformio.ini`: Thêm thư viện `marcoschwartz/LiquidCrystal_I2C@^1.1.4` và `madhephaestus/ESP32Servo@^3.0.5`.
+   - Cập nhật `include/Config.h`: Thêm chân Servo (`GPIO 19`), I2C SDA (`GPIO 21`), SCL (`GPIO 22`), góc khóa 90° và mở 0°.
+   - Nâng cấp `src/main.cpp`: Tích hợp tự động đóng mở chốt khóa cửa theo trạng thái ARMED/DISARMED, hỗ trợ Direct Method `setLock` từ xa, hiển thị màn hình LCD đa thông tin theo thời gian thực.
+   - Nâng cấp `diagram.json`: Bổ sung linh kiện `wokwi-servo` và `wokwi-lcd1602` sẵn sàng mô phỏng.
+   - Biên dịch thành công 100% PlatformIO: RAM 14.3% (46.8KB), Flash 72.8% (954KB). Firmware version 2.1.0.
 

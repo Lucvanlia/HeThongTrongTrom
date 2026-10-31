@@ -14,6 +14,16 @@
 - **PIR HC-SR501**: Cần 30–60 giây sau khi cấp điện để ổn định cảm biến nhiệt. Firmware cần bỏ qua ngõ ra trong 30 giây đầu tiên. Jumper chọn chế độ: Gạt về vị trí **H** (Repeat Trigger - liên tục kích hoạt khi người còn trong vùng quét). Biến trở nhạy: xoay theo chiều kim đồng hồ để tăng tầm xa (tối đa 7m).
 - **LED Indicators & Điện trở hạn dòng**: LED đục 3mm có điện áp rơi $V_f \approx 2.0\text{V} - 2.2\text{V}$, dòng định mức an toàn 5–10mA. Nối tiếp điện trở $R = 220\Omega$ từ GPIO (3.3V) xuống dòng an toàn $I = (3.3 - 2.1)/220 \approx 5.5\text{ mA}$, bảo vệ cả LED và cổng GPIO của ESP32.
 - **Đế mở rộng ESP32 30 chân**: Cung cấp cọc nguồn 5V/3.3V/GND riêng biệt và cổng ốc vặn domino. Giúp cố định dây cắm, chống rung lắc và tuột dây khi mang sản phẩm đi chấm điểm thực tế.
+- **Động cơ Servo SG90 (Smart Door Lock Actuator)**:
+  - Nối chân PWM vào **GPIO 19**, nguồn cấp bắt buộc lấy từ **VIN (5V)** (không dùng 3.3V tránh sụt áp reset ESP32).
+  - Tần số xung 50Hz (chu kỳ 20ms).
+  - Khi ARMED -> Servo xoay 90° đóng chốt khóa an toàn. Khi DISARMED -> Servo xoay 0° mở chốt khóa cửa.
+  - Hỗ trợ Direct Method `setLock` độc lập từ Azure Web Dashboard.
+- **Màn hình LCD 1602 I2C (Trực quan hóa tại chỗ)**:
+  - Giao tiếp qua 2 chân I2C phần cứng: SDA (**GPIO 21**), SCL (**GPIO 22**), địa chỉ I2C `0x27`. Nguồn 5V.
+  - Giao diện 2 dòng 16 ký tự:
+    * Chế độ thường: Dòng 1 hiển thị `ARMED  |KHOA CUA` hoặc `DISARM | MO CUA `, Dòng 2 hiển thị cự ly Sonar `D:120cm|PIR:KO`.
+    * Chế độ báo động: Nhấp nháy dòng 1 `!! CANH BAO !!  `, dòng 2 chỉ rõ nguồn báo động `NGUON: PIR CHUYEN` hoặc `NGUON: SONAR <50cm`.
 
 ## 3. Kiến trúc Đồ thị & Công cụ Agent
 - **`graphify`**: Đã phân tích AST của mã nguồn và xuất mạng đồ thị tại `graphify-out/graph.html` và `graph.json`.
