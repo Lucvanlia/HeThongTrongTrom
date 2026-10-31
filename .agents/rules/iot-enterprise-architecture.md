@@ -42,3 +42,4 @@ Toàn bộ hệ thống chạy trên **Microsoft Azure**, không dùng Firebase,
   - Triển khai trên **Azure Static Web Apps (Free)** với Easy Auth RBAC.
   - Biểu đồ SVG thuần Zero-Jitter: banner cố định `minHeight: 48px`, `pointerEvents="none"`, overlay transparent rect `pointerEvents="all"`.
   - Khóa chống bấm lặp (Pending Lock Ref) 3.5s.
+

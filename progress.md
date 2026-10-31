@@ -23,3 +23,11 @@
 4. **Đồng bộ Quy tắc Kiến trúc Dự án**:
    - Cập nhật `.agents/rules/iot-enterprise-architecture.md` chuẩn 100% Microsoft Azure.
    - Cập nhật `.gitignore` loại trừ các thư mục cache `.pio`, `graphify-out/cache/`, secrets và env local.
+
+5. **Hiện thực hóa Firmware Dual-Core & Mô phỏng Wokwi (Phase 2 & 3)**:
+   - Cập nhật `platformio.ini`: Tích hợp thư viện `PubSubClient@^2.8` và `ArduinoJson@^7.0.0`, cấu hình tốc độ nạp `921600` và baud rate `115200`.
+   - Tạo file `include/Config.h`: Định nghĩa chân GPIO chuẩn (PIR GPIO 13, HC-SR04 TRIG 5 / ECHO 18, Buzzer GPIO 23, LED Vàng GPIO 2, LED Xanh GPIO 4).
+   - Tạo file `src/main.cpp`: Lập trình FreeRTOS dual-core hoàn chỉnh (Core 0 mạng & Azure IoT Hub TLS 8883, Core 1 cảm biến & còi hú báo động).
+   - Biên dịch thành công 100% với PlatformIO (`pio.exe run`): RAM 14.1% (46.2KB), Flash 70.3% (920KB).
+   - Thiết lập mô phỏng Wokwi: Tạo `wokwi.toml` và `diagram.json` mô phỏng đầy đủ mạch phần cứng, sẵn sàng chạy ngay trên VS Code.
+

@@ -11,8 +11,11 @@
 - **Cấm dùng GPIO 12 cho còi**: GPIO 12 là strapping pin (`MTDI`). Nếu bị kéo lên mức cao lúc khởi động, ESP32 sẽ chọn sai điện áp flash nội bộ (1.8V thay vì 3.3V) dẫn đến treo bootloader. Còi chuyển sang **GPIO 23**.
 - **Cảm biến siêu âm HC-SR04**: Chân ECHO xuất mức logic 5V. ESP32 chỉ chịu tối đa 3.3V trên GPIO. Bắt buộc sử dụng cầu phân áp gồm trở $R_1 = 1\text{ k}\Omega$ và $R_2 = 2\text{ k}\Omega$ để hạ điện áp:
   $$V_{\text{ECHO}} = 5\text{V} \times \frac{2\text{k}\Omega}{1\text{k}\Omega + 2\text{k}\Omega} \approx 3.33\text{V}$$
-- **PIR HC-SR501**: Cần 30–60 giây sau khi cấp điện để ổn định cảm biến nhiệt. Firmware cần bỏ qua ngõ ra trong 30 giây đầu tiên.
+- **PIR HC-SR501**: Cần 30–60 giây sau khi cấp điện để ổn định cảm biến nhiệt. Firmware cần bỏ qua ngõ ra trong 30 giây đầu tiên. Jumper chọn chế độ: Gạt về vị trí **H** (Repeat Trigger - liên tục kích hoạt khi người còn trong vùng quét). Biến trở nhạy: xoay theo chiều kim đồng hồ để tăng tầm xa (tối đa 7m).
+- **LED Indicators & Điện trở hạn dòng**: LED đục 3mm có điện áp rơi $V_f \approx 2.0\text{V} - 2.2\text{V}$, dòng định mức an toàn 5–10mA. Nối tiếp điện trở $R = 220\Omega$ từ GPIO (3.3V) xuống dòng an toàn $I = (3.3 - 2.1)/220 \approx 5.5\text{ mA}$, bảo vệ cả LED và cổng GPIO của ESP32.
+- **Đế mở rộng ESP32 30 chân**: Cung cấp cọc nguồn 5V/3.3V/GND riêng biệt và cổng ốc vặn domino. Giúp cố định dây cắm, chống rung lắc và tuột dây khi mang sản phẩm đi chấm điểm thực tế.
 
 ## 3. Kiến trúc Đồ thị & Công cụ Agent
 - **`graphify`**: Đã phân tích AST của mã nguồn và xuất mạng đồ thị tại `graphify-out/graph.html` và `graph.json`.
 - **`planning-with-files`**: Đã cài đặt toàn cục và trong workspace `.agents/skills/planning-with-files/` để duy trì bộ nhớ công việc qua các file markdown.
+

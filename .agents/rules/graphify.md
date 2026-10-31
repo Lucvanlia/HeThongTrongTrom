@@ -21,3 +21,4 @@ Knowledge graph của toàn bộ dự án được lưu trữ tại `graphify-ou
   graphify cluster-only .
   ```
 - Thao tác này sẽ tự động phân tích lại cây AST và cập nhật lại `graphify-out/graph.html` cùng `GRAPH_REPORT.md`.
+
