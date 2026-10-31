@@ -11,12 +11,18 @@ include/secrets.h
 *.env.local
 .env
 .env.*.local
+local.settings.json
+local.settings.*.json
 
 # Web / Node
 node_modules/
 dist/
 build/
 *.log
+
+# Graphify Cache
+graphify-out/cache/
+.graphify_analysis.json
 
 # OS & Temp
 .DS_Store

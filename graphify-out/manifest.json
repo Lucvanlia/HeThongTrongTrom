@@ -1,0 +1,153 @@
+{
+  ".agents/skills/planning-with-files/evals/planning-with-files.eval.yaml": {
+    "mtime": 1793464485.4373505,
+    "seen": 1793464578.339499,
+    "ast_hash": "edc13af21cbbee638b393f3c853855f0",
+    "semantic_hash": "edc13af21cbbee638b393f3c853855f0"
+  },
+  ".agents/skills/planning-with-files/scripts/attest-plan.ps1": {
+    "mtime": 1793464485.4445443,
+    "seen": 1793464578.339499,
+    "ast_hash": "d8940f9f17aea1320494f611dd90aa62",
+    "semantic_hash": "d8940f9f17aea1320494f611dd90aa62"
+  },
+  ".agents/skills/planning-with-files/scripts/attest-plan.sh": {
+    "mtime": 1793464485.4465368,
+    "seen": 1793464578.339499,
+    "ast_hash": "5be85e55502b62e507b8d4f3ae3f6187",
+    "semantic_hash": "5be85e55502b62e507b8d4f3ae3f6187"
+  },
+  ".agents/skills/planning-with-files/scripts/check-complete.ps1": {
+    "mtime": 1793464485.4485323,
+    "seen": 1793464578.339499,
+    "ast_hash": "1529c5f3cca5eaf3b0a3bd650182b037",
+    "semantic_hash": "1529c5f3cca5eaf3b0a3bd650182b037"
+  },
+  ".agents/skills/planning-with-files/scripts/check-complete.sh": {
+    "mtime": 1793464485.4495275,
+    "seen": 1793464578.339499,
+    "ast_hash": "c2b4007fee1b196ca8317df12449d90b",
+    "semantic_hash": "c2b4007fee1b196ca8317df12449d90b"
+  },
+  ".agents/skills/planning-with-files/scripts/gate-stop.sh": {
+    "mtime": 1793464485.4982593,
+    "seen": 1793464578.339499,
+    "ast_hash": "c6c0a38d93cb603748ddf0b0f38bc314",
+    "semantic_hash": "c6c0a38d93cb603748ddf0b0f38bc314"
+  },
+  ".agents/skills/planning-with-files/scripts/init-session.ps1": {
+    "mtime": 1793464485.5022492,
+    "seen": 1793464578.339499,
+    "ast_hash": "ed80a321a2a5c986f32243a33c712c94",
+    "semantic_hash": "ed80a321a2a5c986f32243a33c712c94"
+  },
+  ".agents/skills/planning-with-files/scripts/init-session.sh": {
+    "mtime": 1793464485.5032473,
+    "seen": 1793464578.339499,
+    "ast_hash": "62e6e68685c0919527df518f0be53f3d",
+    "semantic_hash": "62e6e68685c0919527df518f0be53f3d"
+  },
+  ".agents/skills/planning-with-files/scripts/inject-plan.py": {
+    "mtime": 1793464485.504245,
+    "seen": 1793464578.339499,
+    "ast_hash": "f423ee15ade440a72fdf4a14bd7e557f",
+    "semantic_hash": "f423ee15ade440a72fdf4a14bd7e557f"
+  },
+  ".agents/skills/planning-with-files/scripts/inject-plan.sh": {
+    "mtime": 1793464485.5072825,
+    "seen": 1793464578.339499,
+    "ast_hash": "4b5eaa28b88e2a07fcdc9c218b21eae8",
+    "semantic_hash": "4b5eaa28b88e2a07fcdc9c218b21eae8"
+  },
+  ".agents/skills/planning-with-files/scripts/ledger-append.ps1": {
+    "mtime": 1793464485.5113153,
+    "seen": 1793464578.339499,
+    "ast_hash": "889a76ed221f60f758202c6d29353b14",
+    "semantic_hash": "889a76ed221f60f758202c6d29353b14"
+  },
+  ".agents/skills/planning-with-files/scripts/ledger-append.sh": {
+    "mtime": 1793464485.5113153,
+    "seen": 1793464578.339499,
+    "ast_hash": "bfb0a6ecc68b7aa87052fa91163a8ba0",
+    "semantic_hash": "bfb0a6ecc68b7aa87052fa91163a8ba0"
+  },
+  ".agents/skills/planning-with-files/scripts/ledger-summary.ps1": {
+    "mtime": 1793464485.5133502,
+    "seen": 1793464578.339499,
+    "ast_hash": "24f078f42e1fce44aa897f3b333ddef6",
+    "semantic_hash": "24f078f42e1fce44aa897f3b333ddef6"
+  },
+  ".agents/skills/planning-with-files/scripts/ledger-summary.sh": {
+    "mtime": 1793464485.5133502,
+    "seen": 1793464578.339499,
+    "ast_hash": "c8d5c04d40d6b5e22cbf68e8145ad781",
+    "semantic_hash": "c8d5c04d40d6b5e22cbf68e8145ad781"
+  },
+  ".agents/skills/planning-with-files/scripts/phase-status.ps1": {
+    "mtime": 1793464485.5133502,
+    "seen": 1793464578.339499,
+    "ast_hash": "1951bbf7e8d54105dd2f71c5b68b4b90",
+    "semantic_hash": "1951bbf7e8d54105dd2f71c5b68b4b90"
+  },
+  ".agents/skills/planning-with-files/scripts/phase-status.sh": {
+    "mtime": 1793464485.5216212,
+    "seen": 1793464578.339499,
+    "ast_hash": "a535bcbf8bbc9f1bfaec1deb73ee89a3",
+    "semantic_hash": "a535bcbf8bbc9f1bfaec1deb73ee89a3"
+  },
+  ".agents/skills/planning-with-files/scripts/plan-doctor.sh": {
+    "mtime": 1793464485.5236998,
+    "seen": 1793464578.339499,
+    "ast_hash": "6d44c7cad1aa44ba4825a6501e3426bc",
+    "semantic_hash": "6d44c7cad1aa44ba4825a6501e3426bc"
+  },
+  ".agents/skills/planning-with-files/scripts/resolve-plan-dir.ps1": {
+    "mtime": 1793464485.5272346,
+    "seen": 1793464578.339499,
+    "ast_hash": "8595ae59975c5f2c90226809b36be0fe",
+    "semantic_hash": "8595ae59975c5f2c90226809b36be0fe"
+  },
+  ".agents/skills/planning-with-files/scripts/resolve-plan-dir.sh": {
+    "mtime": 1793464485.707304,
+    "seen": 1793464578.339499,
+    "ast_hash": "e29b26339a5d4f17286185f353779a74",
+    "semantic_hash": "e29b26339a5d4f17286185f353779a74"
+  },
+  ".agents/skills/planning-with-files/scripts/session-catchup.py": {
+    "mtime": 1793464485.710237,
+    "seen": 1793464578.347523,
+    "ast_hash": "77f04f1af22961cbeb81a418dcb152b8",
+    "semantic_hash": "77f04f1af22961cbeb81a418dcb152b8"
+  },
+  ".agents/skills/planning-with-files/scripts/set-active-plan.ps1": {
+    "mtime": 1793464485.710237,
+    "seen": 1793464578.347523,
+    "ast_hash": "4e7b3f5dbfd0973c517ece4809e73b31",
+    "semantic_hash": "4e7b3f5dbfd0973c517ece4809e73b31"
+  },
+  ".agents/skills/planning-with-files/scripts/set-active-plan.sh": {
+    "mtime": 1793464485.710237,
+    "seen": 1793464578.347523,
+    "ast_hash": "34ce3d04c8276e2f9a509db5f970dfad",
+    "semantic_hash": "34ce3d04c8276e2f9a509db5f970dfad"
+  },
+  ".agents/skills/planning-with-files/scripts/skill-hook.sh": {
+    "mtime": 1793464485.7157643,
+    "seen": 1793464578.347523,
+    "ast_hash": "596c96a729fd8d59686a945ba67063b4",
+    "semantic_hash": "596c96a729fd8d59686a945ba67063b4"
+  },
+  ".vscode/extensions.json": {
+    "mtime": 1793462338.7161674,
+    "seen": 1793464578.347523,
+    "ast_hash": "b4fe65422789c169a6e60ad8eeb1d8c6",
+    "semantic_hash": "b4fe65422789c169a6e60ad8eeb1d8c6",
+    "ast_empty": true
+  },
+  "src/main.cpp": {
+    "mtime": 1793462132.2590477,
+    "seen": 1793464578.347523,
+    "ast_hash": "458cdb026b66184113305f8ad336d601",
+    "semantic_hash": "458cdb026b66184113305f8ad336d601"
+  }
+}

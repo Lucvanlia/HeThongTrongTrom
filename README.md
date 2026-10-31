@@ -9,7 +9,7 @@ Dự án nghiên cứu và triển khai **Hệ thống IoT Giám sát, Báo đ�
 Hệ thống được thiết kế theo kiến trúc chuẩn Enterprise với tiêu chí: **Độ trễ cực thấp (< 50ms), hoạt động bền bỉ 24/7, bảo mật nhiều lớp và tối ưu chi phí vận hành**:
 - **Tầng Thiết Bị (Edge / ESP32)**:
   - Vi điều khiển ESP32 2 nhân (FreeRTOS): Tách biệt luồng xử lý cảm biến/an toàn (Core 1) và luồng mạng/giao tiếp đám mây (Core 0).
-  - Thu thập tín hiệu từ các cảm biến chống trộm (cảm biến chuyển động PIR, cảm biến từ cửa, cảm biến rung, còi hú báo động).
+  - Cảm biến: PIR HC-SR501 (chuyển động) + HC-SR04 (khoảng cách). Thiết bị ra: Buzzer 3V + LED Vàng (báo động) + LED Xanh (ARM).
   - Kết nối bảo mật tới Azure IoT Hub qua MQTT / TLS.
 - **Tầng Đám Mây (Cloud / Microsoft Azure)**:
   - **Azure IoT Hub**: Quản lý thiết bị hai chiều (Device-to-Cloud & Cloud-to-Device), đồng bộ cấu hình qua Device Twins.
@@ -71,3 +71,4 @@ cd HeThongTrongTrom
 
 ## 👥 Tác Giả & Bản Quyền
 Dự án được phát triển bởi **Lucvanlia**. Mọi quyền được bảo lưu.
+
