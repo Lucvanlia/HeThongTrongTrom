@@ -3,137 +3,127 @@
   "author": "Lucvanlia",
   "editor": "wokwi",
   "parts": [
+    { "type": "wokwi-breadboard", "id": "bb1", "top": -358.2, "left": -189.2, "attrs": {} },
     {
       "type": "board-esp32-devkit-c-v4",
       "id": "esp",
-      "top": 0,
-      "left": 0,
+      "top": -364.8,
+      "left": -494.36,
+      "rotate": 270,
       "attrs": {}
     },
-    {
-      "type": "wokwi-pir-motion-sensor",
-      "id": "pir1",
-      "top": -140,
-      "left": -260,
-      "attrs": {}
-    },
+    { "type": "wokwi-pir-motion-sensor", "id": "pir1", "top": -399.2, "left": 50.22, "attrs": {} },
     {
       "type": "wokwi-hc-sr04",
       "id": "sonar1",
-      "top": -140,
-      "left": 180,
+      "top": -392.1,
+      "left": 216.7,
       "attrs": { "distance": "80" }
     },
     {
       "type": "wokwi-lcd1602",
       "id": "lcd1",
-      "top": -260,
-      "left": -50,
+      "top": -646.4,
+      "left": 5.6,
       "attrs": { "pins": "i2c" }
     },
-    {
-      "type": "wokwi-relay-module",
-      "id": "relay1",
-      "top": 200,
-      "left": -90,
-      "attrs": {}
-    },
+    { "type": "wokwi-relay-module", "id": "relay1", "top": -95.8, "left": 547.2, "attrs": {} },
     {
       "type": "wokwi-servo",
       "id": "servo1",
-      "top": 360,
-      "left": -70,
+      "top": 26.8,
+      "left": 566.4,
       "attrs": { "hornColor": "blue" }
     },
     {
       "type": "wokwi-buzzer",
       "id": "bz1",
-      "top": 200,
-      "left": -260,
+      "top": -12.3,
+      "left": -91.5,
+      "rotate": 90,
       "attrs": { "volume": "0.1" }
     },
     {
       "type": "wokwi-led",
       "id": "led_alarm",
-      "top": 180,
-      "left": 160,
-      "attrs": { "color": "yellow", "label": "Alarm LED" }
+      "top": -349.2,
+      "left": -121,
+      "attrs": { "color": "yellow", "label": "" }
     },
     {
       "type": "wokwi-led",
       "id": "led_armed",
-      "top": 250,
-      "left": 160,
-      "attrs": { "color": "green", "label": "ARM LED" }
+      "top": -349.2,
+      "left": -73,
+      "attrs": { "color": "green", "label": "" }
     },
     {
       "type": "wokwi-resistor",
       "id": "r_alarm",
-      "top": 190,
-      "left": 90,
-      "attrs": { "resistance": "220" }
+      "top": -408.85,
+      "left": -374.4,
+      "attrs": { "resistance": "220", "value": "220" }
     },
     {
       "type": "wokwi-resistor",
       "id": "r_armed",
-      "top": 260,
-      "left": 90,
-      "attrs": { "resistance": "220" }
+      "top": -447.25,
+      "left": -374.4,
+      "attrs": { "resistance": "220", "value": "220" }
     },
     {
       "type": "wokwi-resistor",
       "id": "r_div1",
-      "top": -40,
-      "left": 260,
+      "top": -226.15,
+      "left": 344.2,
+      "rotate": 180,
       "attrs": { "resistance": "1000" }
     },
     {
       "type": "wokwi-resistor",
       "id": "r_div2",
-      "top": 10,
-      "left": 260,
-      "attrs": { "resistance": "2000" }
-    }
+      "top": -140.05,
+      "left": 211.2,
+      "attrs": { "resistance": "2000", "value": "2000" }
+    },
+    { "type": "wokwi-vcc", "id": "vcc1", "top": -143.24, "left": 720, "attrs": {} }
   ],
   "connections": [
     [ "esp:TX", "$serialMonitor:RX", "", [] ],
     [ "esp:RX", "$serialMonitor:TX", "", [] ],
-
-    [ "esp:5V", "pir1:VCC", "red", [ "v0" ] ],
-    [ "esp:GND.1", "pir1:GND", "black", [ "v0" ] ],
-    [ "esp:13", "pir1:OUT", "gold", [ "v0" ] ],
-
-    [ "esp:5V", "sonar1:VCC", "red", [ "v0" ] ],
-    [ "esp:GND.1", "sonar1:GND", "black", [ "v0" ] ],
-    [ "esp:5", "sonar1:TRIG", "blue", [ "v0" ] ],
-    [ "sonar1:ECHO", "r_div1:1", "purple", [ "v0" ] ],
-    [ "r_div1:2", "esp:18", "purple", [ "v0" ] ],
-    [ "r_div1:2", "r_div2:1", "purple", [ "v0" ] ],
-    [ "r_div2:2", "esp:GND.1", "black", [ "v0" ] ],
-
-    [ "esp:5V", "lcd1:VCC", "red", [ "v0" ] ],
-    [ "esp:GND.1", "lcd1:GND", "black", [ "v0" ] ],
-    [ "esp:21", "lcd1:SDA", "green", [ "v0" ] ],
-    [ "esp:22", "lcd1:SCL", "blue", [ "v0" ] ],
-
-    [ "esp:5V", "relay1:VCC", "red", [ "v0" ] ],
-    [ "esp:GND.2", "relay1:GND", "black", [ "v0" ] ],
-    [ "esp:25", "relay1:IN", "purple", [ "v0" ] ],
-    [ "esp:5V", "relay1:COM", "red", [ "v0" ] ],
-    [ "relay1:NO", "servo1:V+", "red", [ "v0" ] ],
-    [ "esp:GND.2", "servo1:GND", "black", [ "v0" ] ],
-    [ "esp:19", "servo1:PWM", "orange", [ "v0" ] ],
-
-    [ "esp:23", "bz1:2", "orange", [ "v0" ] ],
-    [ "esp:GND.2", "bz1:1", "black", [ "v0" ] ],
-
-    [ "esp:2", "r_alarm:1", "yellow", [ "v0" ] ],
-    [ "r_alarm:2", "led_alarm:A", "yellow", [ "v0" ] ],
-    [ "led_alarm:C", "esp:GND.2", "black", [ "v0" ] ],
-
+    [ "esp:3V3", "bb1:bp.1", "red", [ "v0" ] ],
+    [ "esp:GND.1", "bb1:bn.1", "black", [ "v0" ] ],
+    [ "esp:5V", "bb1:tp.1", "red", [ "v-1.29", "h116.86", "v-134.4" ] ],
+    [ "esp:GND.3", "bb1:tn.1", "black", [ "v-29.94", "h260.86", "v0.1" ] ],
+    [ "led_alarm:C", "bb1:bn.5", "black", [ "v0" ] ],
+    [ "led_armed:C", "bb1:bn.9", "black", [ "v0" ] ],
+    [ "esp:2", "r_alarm:1", "gold", [ "v0" ] ],
+    [ "r_alarm:2", "led_alarm:A", "gold", [ "h27.6", "v144", "h192" ] ],
     [ "esp:4", "r_armed:1", "green", [ "v0" ] ],
-    [ "r_armed:2", "led_armed:A", "green", [ "v0" ] ],
-    [ "led_armed:C", "esp:GND.2", "black", [ "v0" ] ]
+    [ "r_armed:2", "led_armed:A", "green", [ "v0", "h56.4", "v192", "h211.2" ] ],
+    [ "pir1:OUT", "esp:13", "green", [ "v115.2", "h-595.34" ] ],
+    [ "pir1:VCC", "bb1:tp.11", "red", [ "v9.6", "h-114.4" ] ],
+    [ "pir1:GND", "bb1:tn.30", "black", [ "v9.6", "h76.54", "v-38.3" ] ],
+    [ "sonar1:VCC", "bb1:tp.31", "red", [ "h-86.4", "v-48.3" ] ],
+    [ "sonar1:GND", "bb1:tn.49", "black", [ "h85.2", "v-38.3" ] ],
+    [ "esp:5", "sonar1:TRIG", "blue", [ "v-183.54", "h904.06", "v230.4", "h-172.4" ] ],
+    [ "sonar1:ECHO", "r_div1:2", "green", [ "h-37.2", "v-76.8" ] ],
+    [ "r_div1:1", "r_div2:2", "green", [ "v0" ] ],
+    [ "r_div2:1", "bb1:bn.31", "green", [ "h-9.6", "v-27.5" ] ],
+    [ "esp:18", "r_div1:1", "cyan", [ "v-164.34", "h884.86", "v249.6" ] ],
+    [ "lcd1:SDA", "esp:21", "green", [ "v0.2", "h-481.66" ] ],
+    [ "esp:22", "lcd1:SCL", "gold", [ "v0" ] ],
+    [ "lcd1:GND", "bb1:tn.2", "black", [ "h0" ] ],
+    [ "lcd1:VCC", "bb1:tp.4", "red", [ "h0" ] ],
+    [ "esp:25", "relay1:IN", "green", [ "v104.31", "h884.86", "v48.2" ] ],
+    [ "relay1:GND", "bb1:bn.50", "black", [ "h47.2", "v95.1" ] ],
+    [ "relay1:VCC", "bb1:tp.50", "red", [ "h-38.4", "v-278.4" ] ],
+    [ "relay1:COM", "vcc1:VCC", "red", [ "h0" ] ],
+    [ "relay1:NO", "servo1:V+", "red", [ "h58.8", "v55.8", "h-268.8", "v95.8" ] ],
+    [ "esp:19", "servo1:PWM", "orange", [ "v-145.14", "h1080.06", "v240.4" ] ],
+    [ "servo1:GND", "bb1:tn.29", "black", [ "h0" ] ],
+    [ "esp:23", "bz1:2", "red", [ "v-20.34", "h-55.94", "v355.2", "h470.4" ] ],
+    [ "bz1:1", "bb1:bn.3", "black", [ "v0" ] ]
   ],
   "dependencies": {}
 }
