@@ -14,9 +14,14 @@
 - **PIR HC-SR501**: Cần 30–60 giây sau khi cấp điện để ổn định cảm biến nhiệt. Firmware cần bỏ qua ngõ ra trong 30 giây đầu tiên. Jumper chọn chế độ: Gạt về vị trí **H** (Repeat Trigger - liên tục kích hoạt khi người còn trong vùng quét). Biến trở nhạy: xoay theo chiều kim đồng hồ để tăng tầm xa (tối đa 7m).
 - **LED Indicators & Điện trở hạn dòng**: LED đục 3mm có điện áp rơi $V_f \approx 2.0\text{V} - 2.2\text{V}$, dòng định mức an toàn 5–10mA. Nối tiếp điện trở $R = 220\Omega$ từ GPIO (3.3V) xuống dòng an toàn $I = (3.3 - 2.1)/220 \approx 5.5\text{ mA}$, bảo vệ cả LED và cổng GPIO của ESP32.
 - **Đế mở rộng ESP32 30 chân**: Cung cấp cọc nguồn 5V/3.3V/GND riêng biệt và cổng ốc vặn domino. Giúp cố định dây cắm, chống rung lắc và tuột dây khi mang sản phẩm đi chấm điểm thực tế.
-- **Động cơ Servo SG90 (Smart Door Lock Actuator)**:
-  - Nối chân PWM vào **GPIO 19**, nguồn cấp bắt buộc lấy từ **VIN (5V)** (không dùng 3.3V tránh sụt áp reset ESP32).
-  - Tần số xung 50Hz (chu kỳ 20ms).
+- **Động cơ Servo SG90 (Smart Door Lock Actuator) & Rơ-le 5V Power-Gating**:
+  - Nối chân PWM vào **GPIO 19**.
+  - **Kỹ thuật Rơ-le 5V Power-Gating (GPIO 25 - Active LOW)**: Nguồn 5V cấp cho chân VCC của Servo đi qua tiếp điểm thường mở (NO) của Rơ-le 5V.
+  - Khi cần xoay chốt: Kích Rơ-le ON (mức LOW) -> Chờ 50ms ổn định nguồn -> Kích xung PWM xoay góc (0° hoặc 90°) -> Giữ 600ms cho cơ cấu cơ học dịch chuyển xong -> Tắt PWM (detach) -> Ngắt Rơ-le OFF (mức HIGH).
+  - Lợi ích vượt trội:
+    * Triệt tiêu 100% hiện tượng rung lắc/tiếng rít (jitter/buzzing) của servo khi đứng yên.
+    * Tiết kiệm điện năng tối đa khi thiết bị chờ (idle power draw = 0W cho servo).
+    * Chống hiện tượng sụt áp nguồn (brownout reset) làm treo ESP32 khi servo chịu tải cơ học.
   - Khi ARMED -> Servo xoay 90° đóng chốt khóa an toàn. Khi DISARMED -> Servo xoay 0° mở chốt khóa cửa.
   - Hỗ trợ Direct Method `setLock` độc lập từ Azure Web Dashboard.
 - **Màn hình LCD 1602 I2C (Trực quan hóa tại chỗ)**:

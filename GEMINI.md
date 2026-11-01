@@ -33,6 +33,9 @@
 | **Buzzer (3V/5V)** | Positive (+) | **GPIO 23** | **STRICTLY FORBIDDEN to use GPIO 12** (ESP32 strapping pin causing boot fails). |
 | **LED Vàng (Alarm)**| Anode (+) | **GPIO 2** | Via 220Ω resistor. Flashes at 2Hz when intrusion detected. |
 | **LED Xanh (Armed)**| Anode (+) | **GPIO 4** | Via 220Ω resistor. Solid ON when system is ARMED, OFF when DISARMED. |
+| **Servo SG90** | PWM (Orange) | **GPIO 19** | Smart door lock. 0° (Unlocked), 90° (Locked). VCC via 5V Relay. |
+| **Relay 5V Module**| IN | **GPIO 25** | Power-gating for servo (Active-LOW). Isolates servo power when idle. |
+| **LCD 1602 I2C** | SDA / SCL | **GPIO 21** / **GPIO 22** | Hardware I2C (Address 0x27). 5V VCC. Dual-line live status display. |
 
 ---
 

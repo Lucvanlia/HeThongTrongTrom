@@ -65,17 +65,27 @@ static uint64_t getEpochMs() {
 }
 
 // ============================================================================
-// 2. CÁC HÀM XỬ LÝ LỆNH ĐIỀU KHIỂN CHẤP HÀNH (SERVO, CÒI, TRẠNG THÁI)
+// 2. CÁC HÀM XỬ LÝ LỆNH ĐIỀU KHIỂN CHẤP HÀNH (RELAY + SERVO, CÒI, TRẠNG THÁI)
 // ============================================================================
 static void setLockState(bool locked) {
     portENTER_CRITICAL(&gMux);
     g.doorLocked = locked;
     portEXIT_CRITICAL(&gMux);
 
-    // Điều khiển góc quay Servo SG90
+    // KỸ THUẬT POWER-GATING:
+    // 1. Kích Relay BẬT cấp nguồn 5V cho Servo
+    digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_ON);
+    vTaskDelay(pdMS_TO_TICKS(50)); // Chờ điện áp ổn định chống sụt áp
+
+    // 2. Phát xung điều khiển góc quay Servo
     servoLock.write(locked ? Config::SERVO_LOCK_ANGLE : Config::SERVO_UNLOCK_ANGLE);
+    vTaskDelay(pdMS_TO_TICKS(Config::SERVO_MOVE_TIME_MS)); // Chờ cánh tay cơ học gạt chốt xong (600ms)
+
+    // 3. Kích Relay NGẮT hoàn toàn nguồn 5V vào Servo
+    digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_OFF);
+
     reportPending = true;
-    Serial.printf("[ACTUATOR] Servo chot cua -> %s (Goc %d do)\n",
+    Serial.printf("[ACTUATOR] Relay da cap nguon -> Xoay Servo -> Ngat dien an toan. Chot: %s (%d do)\n",
                   locked ? "DONG KHOA" : "MO KHOA",
                   locked ? Config::SERVO_LOCK_ANGLE : Config::SERVO_UNLOCK_ANGLE);
 }
@@ -88,7 +98,7 @@ static void setArmed(bool armed) {
     }
     portEXIT_CRITICAL(&gMux);
 
-    // Cơ chế an toàn tự động: BẬT bảo vệ -> Tự động đóng chốt cửa
+    // Cơ chế an toàn tự động: BẬT bảo vệ -> Tự động đóng chốt cửa qua Relay + Servo
     setLockState(armed);
 
     prefs.putBool("armed", armed);  // Lưu vào Flash NVS chống mất điện
@@ -514,21 +524,24 @@ void setup() {
     Serial.begin(115200);
     Serial.println("\n=======================================================");
     Serial.println("  HE THONG CANH BAO CHONG TROM IOT (ESP32 - AZURE)");
-    Serial.printf("  Firmware: v%s | Actuators: Buzzer + Servo + LCD\n", Config::FIRMWARE_VERSION);
+    Serial.printf("  Firmware: v%s | Power-Gating Relay + Servo + LCD\n", Config::FIRMWARE_VERSION);
     Serial.println("=======================================================");
 
-    // Khởi tạo các chân GPIO cảm biến và còi
+    // Khởi tạo các chân GPIO cảm biến, còi và Relay
     pinMode(Config::PIN_PIR, INPUT);
     pinMode(Config::PIN_US_TRIG, OUTPUT);
     pinMode(Config::PIN_US_ECHO, INPUT);
     pinMode(Config::PIN_BUZZER, OUTPUT);
     pinMode(Config::PIN_LED_ALARM, OUTPUT);
     pinMode(Config::PIN_LED_ARMED, OUTPUT);
+    pinMode(Config::PIN_RELAY_SERVO, OUTPUT);
 
     digitalWrite(Config::PIN_US_TRIG, LOW);
     digitalWrite(Config::PIN_BUZZER, LOW);
     digitalWrite(Config::PIN_LED_ALARM, LOW);
     digitalWrite(Config::PIN_LED_ARMED, LOW);
+    // Ban đầu ngắt Relay để bảo vệ nguồn Servo
+    digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_OFF);
 
     // Khởi tạo giao tiếp I2C và Màn hình LCD 16x2
     Wire.begin(Config::PIN_I2C_SDA, Config::PIN_I2C_SCL);
@@ -537,7 +550,7 @@ void setup() {
     lcd.setCursor(0, 0);
     lcd.print("  HE THONG IOT  ");
     lcd.setCursor(0, 1);
-    lcd.print(" CHONG TROM v2.1");
+    lcd.print(" CHONG TROM v2.2");
 
     // Khởi tạo Động cơ Servo SG90 (chốt cửa)
     ESP32PWM::allocateTimer(0);
@@ -553,10 +566,14 @@ void setup() {
     g.doorLocked  = g.armed; // Mặc định khóa nếu đang armed
     g.thresholdCm = prefs.getUShort("thr", Config::DEFAULT_DISTANCE_THRESHOLD_CM);
 
-    // Đặt vị trí ban đầu của Servo chốt cửa
+    // Đặt vị trí ban đầu của Servo chốt cửa qua Relay Power-Gating
+    digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_ON);
+    delay(50);
     servoLock.write(g.doorLocked ? Config::SERVO_LOCK_ANGLE : Config::SERVO_UNLOCK_ANGLE);
+    delay(Config::SERVO_MOVE_TIME_MS);
+    digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_OFF);
 
-    delay(1000); // Giữ màn hình khởi động 1 giây
+    delay(800); // Giữ màn hình khởi động
     lcd.clear();
 
     // Khởi tạo hàng đợi cảnh báo FreeRTOS (tối đa 8 sự kiện)

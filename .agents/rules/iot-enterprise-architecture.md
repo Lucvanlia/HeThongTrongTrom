@@ -13,6 +13,9 @@ Toàn bộ hệ thống chạy trên **Microsoft Azure**, không dùng Firebase,
 - **Buzzer 3V**: GPIO 23 (**CẤM DÙNG GPIO 12** vì là strapping pin gây lỗi boot)
 - **LED Vàng (Cảnh báo)**: GPIO 2 (qua trở 220Ω, chớp nháy 2Hz khi ALARM)
 - **LED Xanh (ARM)**: GPIO 4 (qua trở 220Ω, sáng liên tục khi ARMED)
+- **Servo SG90 (Chốt Cửa Khóa Thông Minh)**: PWM GPIO 19, điều khiển góc 0° (Mở) / 90° (Khóa)
+- **Rơ-le 5V (Power-Gating Servo)**: IN GPIO 25 (Active LOW), cách ly nguồn 5V khi servo không chuyển động
+- **LCD 1602 I2C**: SDA GPIO 21, SCL GPIO 22, Địa chỉ 0x27 (Nguồn 5V)
 
 ## 2. NGUYÊN LÝ DUAL-CORE FREERTOS
 - **Core 0 (`networkTask` - Priority 1)**:

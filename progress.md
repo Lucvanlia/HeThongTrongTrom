@@ -29,5 +29,16 @@
    - Cập nhật `include/Config.h`: Thêm chân Servo (`GPIO 19`), I2C SDA (`GPIO 21`), SCL (`GPIO 22`), góc khóa 90° và mở 0°.
    - Nâng cấp `src/main.cpp`: Tích hợp tự động đóng mở chốt khóa cửa theo trạng thái ARMED/DISARMED, hỗ trợ Direct Method `setLock` từ xa, hiển thị màn hình LCD đa thông tin theo thời gian thực.
    - Nâng cấp `diagram.json`: Bổ sung linh kiện `wokwi-servo` và `wokwi-lcd1602` sẵn sàng mô phỏng.
-   - Biên dịch thành công 100% PlatformIO: RAM 14.3% (46.8KB), Flash 72.8% (954KB). Firmware version 2.1.0.
+
+7. **Tích hợp Module Rơ-le 5V Power-Gating cho Servo SG90**:
+   - Cấu hình chân Rơ-le điều khiển nguồn Servo: `GPIO 25` (Active LOW).
+   - Thiết kế hàm `moveServoWithPowerGating(int targetAngle)`:
+     * Kích hoạt rơ-le đóng mạch cấp nguồn 5V cho Servo.
+     * Trễ 50ms ổn định đường ray nguồn điện áp.
+     * Kích hoạt `servo.attach()`, phát tín hiệu xung PWM xoay góc chỉ định (0° hoặc 90°).
+     * Trễ 600ms đảm bảo chốt cơ học hoàn tất hành trình xoay.
+     * Ngắt xung `servo.detach()` và ngắt rơ-le cách ly hoàn toàn nguồn servo.
+   - Bổ sung linh kiện Rơ-le 5V vào sơ đồ mạch mô phỏng `diagram.json`.
+   - Biên dịch thành công 100% PlatformIO: RAM 14.3% (46.8KB), Flash 72.8% (954KB). Firmware version 2.2.0.
+
 

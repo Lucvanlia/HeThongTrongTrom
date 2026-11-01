@@ -1,15 +1,15 @@
-# Graph Report - HeTrongTrongTrom-src  (2026-10-31)
+# Graph Report - HeTrongTrongTrom-src  (2026-11-01)
 
 ## Corpus Check
 - cluster-only mode — file stats not available
 
 ## Summary
-- 421 nodes · 813 edges · 32 communities (21 shown, 11 thin omitted)
+- 427 nodes · 823 edges · 29 communities (21 shown, 8 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 3 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `75c07b0e`
+- Built from commit: `1d4d1def`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -35,10 +35,7 @@
 - init-session.ps1
 - resolve-plan-dir.ps1
 - check-complete.ps1
-- main.cpp
-- emit_unavailable
-- gate-stop.sh
-- ledger-summary.ps1
+- skill-hook.sh
 - emit_unavailable
 - gate-stop.sh
 
@@ -51,69 +48,69 @@
 6. `opencode_catchup()` - 12 edges
 7. `session_attached()` - 12 edges
 8. `is_within_root()` - 12 edges
-9. `main()` - 11 edges
-10. `safe_snapshot()` - 11 edges
+9. `SharedState` - 11 edges
+10. `main()` - 11 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `inject()` --calls--> `Injector`  [EXTRACTED]
-  .agents/skills/planning-with-files/scripts/inject-plan.py → .agents/skills/planning-with-files/scripts/inject-plan.py  _Bridges community 4 → community 6_
+  .agents/skills/planning-with-files/scripts/inject-plan.py → .agents/skills/planning-with-files/scripts/inject-plan.py  _Bridges community 2 → community 6_
 - `main()` --calls--> `ClaudeDispatcher`  [EXTRACTED]
-  .agents/skills/planning-with-files/scripts/inject-plan.py → .agents/skills/planning-with-files/scripts/inject-plan.py  _Bridges community 6 → community 2_
-- `find_current_codex_session()` --calls--> `os`  [EXTRACTED]
-  .agents/skills/planning-with-files/scripts/session-catchup.py →   _Bridges community 0 → community 10_
-- `plan_is_ambiguous()` --calls--> `is_file()`  [EXTRACTED]
-  .agents/skills/planning-with-files/scripts/inject-plan.py → .agents/skills/planning-with-files/scripts/inject-plan.py  _Bridges community 10 → community 6_
-- `plan_is_ambiguous()` --calls--> `is_link()`  [EXTRACTED]
-  .agents/skills/planning-with-files/scripts/inject-plan.py → .agents/skills/planning-with-files/scripts/inject-plan.py  _Bridges community 10 → community 16_
+  .agents/skills/planning-with-files/scripts/inject-plan.py → .agents/skills/planning-with-files/scripts/inject-plan.py  _Bridges community 6 → community 3_
+- `resolve_plan_dir()` --calls--> `os`  [EXTRACTED]
+  .agents/skills/planning-with-files/scripts/inject-plan.py →   _Bridges community 2 → community 0_
+- `main()` --calls--> `pretool_cache()`  [EXTRACTED]
+  .agents/skills/planning-with-files/scripts/inject-plan.py → .agents/skills/planning-with-files/scripts/inject-plan.py  _Bridges community 3 → community 5_
+- `safe_snapshot()` --calls--> `os`  [EXTRACTED]
+  .agents/skills/planning-with-files/scripts/inject-plan.py →   _Bridges community 5 → community 0_
 
 ## Import Cycles
 - None detected.
 
-## Communities (32 total, 11 thin omitted)
+## Communities (29 total, 8 thin omitted)
 
 ### Community 0 - "session-catchup.py"
 Cohesion: 0.05
 Nodes (42): _claude_sanitize(), claude_session_cwd(), codex_meta_cwd(), codex_planning_update(), collect_claude_tool_results(), configure_utf8_stdio(), emit_metadata_report(), extract_messages_after() (+34 more)
 
 ### Community 1 - "inject-plan.py"
-Cohesion: 0.07
-Nodes (26): alarmOutputTask(), AlertEvent, distanceCm, sensor, connectIoTHub(), generateSasToken(), getEpochMs(), loop() (+18 more)
+Cohesion: 0.06
+Nodes (29): alarmOutputTask(), AlertEvent, distanceCm, sensor, connectIoTHub(), generateSasToken(), getEpochMs(), loop() (+21 more)
 
 ### Community 2 - "inject-plan.sh"
-Cohesion: 0.10
-Nodes (13): _descriptor_final_path(), hook_identity(), hook_is_main(), _identity(), _inside(), main(), normalize_wall_clock(), _normalized_windows_final() (+5 more)
+Cohesion: 0.14
+Nodes (14): Injector, file_has_token(), mode_has(), mode_relax_allowed(), is_dir(), is_file(), is_link(), mtime_seconds() (+6 more)
 
 ### Community 3 - "session_attached"
+Cohesion: 0.10
+Nodes (12): Bail, hook_identity(), hook_is_main(), main(), normalize_wall_clock(), parse_args(), path_is_absolute_ish(), canonicalize() (+4 more)
+
+### Community 4 - "._run"
 Cohesion: 0.20
 Nodes (22): bounded_view(), cleanup_snapshot(), cleanup_snapshot_file(), emit_plan_head(), frame_file(), is_windowsapps_path(), is_within_root(), mode_has() (+14 more)
 
-### Community 4 - "._run"
-Cohesion: 0.15
-Nodes (9): cache_dir(), head_lines(), Injector, file_has_token(), mode_has(), mode_relax_allowed(), line_count(), slug_is_valid() (+1 more)
-
 ### Community 5 - "set-active-plan.sh"
+Cohesion: 0.11
+Nodes (8): _descriptor_final_path(), _identity(), _inside(), _normalized_windows_final(), pretool_cache(), safe_snapshot(), secure_progress_marker(), session_attached()
+
+### Community 6 - "is_file"
+Cohesion: 0.18
+Nodes (7): cache_dir(), ClaudeDispatcher, hook_json(), inject(), json_string(), shell_pwd(), system_message_json()
+
+### Community 7 - "set-active-plan.ps1"
 Cohesion: 0.30
 Nodes (19): canonicalize(), current_active(), file_metadata(), is_windowsapps_path(), is_within_root(), json_add_candidate(), json_candidate(), json_phases() (+11 more)
 
-### Community 6 - "is_file"
-Cohesion: 0.22
-Nodes (7): ClaudeDispatcher, hook_json(), inject(), is_file(), json_string(), path_is_absolute_ish(), system_message_json()
-
-### Community 7 - "set-active-plan.ps1"
+### Community 8 - "cases"
 Cohesion: 0.37
 Nodes (14): Add-PhaseStatus(), Get-CurrentActivePlan(), Get-FinalPath(), Get-ListingCandidate(), Get-ListingFileMetadata(), Get-ListingSelection(), Get-PhaseStatus(), Resolve-OwnedPointerBackup() (+6 more)
 
-### Community 8 - "cases"
+### Community 9 - "init-session.sh"
 Cohesion: 0.14
 Nodes (13): glob, file_glob, kind, value, cases, assertions, judge, name (+5 more)
 
-### Community 9 - "init-session.sh"
+### Community 10 - "attest-plan.ps1"
 Cohesion: 0.29
 Nodes (13): apply_v3_mode(), create_files_in(), gen_nonce(), inherit_root_mode(), print_v3_mode_status(), init-session.sh script, short_uuid(), slugify() (+5 more)
-
-### Community 10 - "attest-plan.ps1"
-Cohesion: 0.16
-Nodes (7): is_dir(), mtime_seconds(), pin_is_absolute(), plan_is_ambiguous(), resolve_plan_dir(), shell_pwd(), strip_ws()
 
 ### Community 11 - "resolve-plan-dir.sh"
 Cohesion: 0.35
@@ -128,16 +125,16 @@ Cohesion: 0.38
 Nodes (9): append_line(), iso_utc(), json_escape(), max_tick_in_dir(), resolve_plan_dir(), sanitize_agent(), ledger-append.sh script, usage() (+1 more)
 
 ### Community 14 - ".plan_view"
+Cohesion: 0.22
+Nodes (3): head_lines(), line_count(), smart_plan_extract()
+
+### Community 15 - "phase-status.sh"
 Cohesion: 0.39
 Nodes (7): acquire_lock(), claim_lock_owner(), do_write(), resolve_plan_file(), rewrite(), phase-status.sh script, usage()
 
-### Community 15 - "phase-status.sh"
+### Community 16 - "attest-plan.sh"
 Cohesion: 0.50
 Nodes (7): attestation_path_for(), compute_hash(), resolve_from_slug_cwd(), resolve_plan_file(), attest-plan.sh script, slug_is_valid(), usage_error()
-
-### Community 16 - "attest-plan.sh"
-Cohesion: 0.29
-Nodes (5): is_link(), canonicalize(), norm_slashes(), within(), within_root()
 
 ### Community 17 - "check-complete.sh script"
 Cohesion: 0.29
@@ -147,33 +144,33 @@ Nodes (6): author, connections, dependencies, editor, parts, version
 Cohesion: 0.60
 Nodes (5): advisory_report(), first_in_progress_phase(), json_escape(), ledger_line_count(), check-complete.sh script
 
-### Community 21 - "check-complete.ps1"
+### Community 20 - "resolve-plan-dir.ps1"
 Cohesion: 0.60
 Nodes (5): fail(), info(), ok(), plan-doctor.sh script, warn()
 
-### Community 26 - "emit_unavailable"
+### Community 25 - "skill-hook.sh"
 Cohesion: 0.83
 Nodes (3): select_python(), select_python_into_var(), skill-hook.sh script
 
 ## Knowledge Gaps
-- **8 isolated node(s):** `distanceCm`, `sensor`, `alarm`, `alarmSinceMs`, `armed` (+3 more)
-  These have ≤1 connection - possible missing edges. (Counts symbols only; 130 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **11 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **9 isolated node(s):** `distanceCm`, `sensor`, `alarm`, `alarmSinceMs`, `armed` (+4 more)
+  These have ≤1 connection - possible missing edges. (Counts symbols only; 134 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **8 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `session_attached()` connect `resolve-plan-dir.ps1` to `session-catchup.py`, `inject-plan.sh`, `attest-plan.ps1`, `._run`?**
+- **Why does `session_attached()` connect `set-active-plan.sh` to `session-catchup.py`, `inject-plan.sh`, `session_attached`?**
   _High betweenness centrality (0.016) - this node is a cross-community bridge._
 - **What connects `distanceCm`, `sensor`, `alarm` to the rest of the system?**
-  _8 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _9 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `session-catchup.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.05359831376091539 - nodes in this community are weakly interconnected._
-- **Why does `secure_progress_marker()` connect `inject-plan.sh` to `attest-plan.ps1`, `._run`?**
-  _High betweenness centrality (0.014) - this node is a cross-community bridge._
+  _Cohesion score 0.053482221569203646 - nodes in this community are weakly interconnected._
+- **Why does `secure_progress_marker()` connect `set-active-plan.sh` to `session-catchup.py`, `inject-plan.sh`, `session_attached`?**
+  _High betweenness centrality (0.015) - this node is a cross-community bridge._
 - **Should `inject-plan.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.06968641114982578 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06205673758865248 - nodes in this community are weakly interconnected._
 - **Should `inject-plan.sh` be split into smaller, more focused modules?**
-  _Cohesion score 0.10114942528735632 - nodes in this community are weakly interconnected._
-- **Should `cases` be split into smaller, more focused modules?**
-  _Cohesion score 0.14285714285714285 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.13793103448275862 - nodes in this community are weakly interconnected._
+- **Should `session_attached` be split into smaller, more focused modules?**
+  _Cohesion score 0.10144927536231885 - nodes in this community are weakly interconnected._

@@ -32,10 +32,17 @@
       "attrs": { "pins": "i2c" }
     },
     {
+      "type": "wokwi-relay-module",
+      "id": "relay1",
+      "top": 200,
+      "left": -90,
+      "attrs": {}
+    },
+    {
       "type": "wokwi-servo",
       "id": "servo1",
-      "top": 240,
-      "left": -80,
+      "top": 360,
+      "left": -70,
       "attrs": { "hornColor": "blue" }
     },
     {
@@ -109,7 +116,11 @@
     [ "esp:21", "lcd1:SDA", "green", [ "v0" ] ],
     [ "esp:22", "lcd1:SCL", "blue", [ "v0" ] ],
 
-    [ "esp:5V", "servo1:V+", "red", [ "v0" ] ],
+    [ "esp:5V", "relay1:VCC", "red", [ "v0" ] ],
+    [ "esp:GND.2", "relay1:GND", "black", [ "v0" ] ],
+    [ "esp:25", "relay1:IN", "purple", [ "v0" ] ],
+    [ "esp:5V", "relay1:COM", "red", [ "v0" ] ],
+    [ "relay1:NO", "servo1:V+", "red", [ "v0" ] ],
     [ "esp:GND.2", "servo1:GND", "black", [ "v0" ] ],
     [ "esp:19", "servo1:PWM", "orange", [ "v0" ] ],
 
