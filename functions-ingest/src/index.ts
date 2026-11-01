@@ -3,3 +3,4 @@ import "./functions/telemetryIngest";
 import "./functions/offlineWatchdog";
 
 console.log("Azure Functions (functions-ingest) v4 initialized successfully.");
+

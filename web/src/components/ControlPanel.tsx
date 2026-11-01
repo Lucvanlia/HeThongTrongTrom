@@ -123,3 +123,4 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ telemetry, onRefresh
     </div>
   );
 };
+

@@ -151,3 +151,4 @@ app.http("getDeviceState", {
   route: "state",
   handler: getDeviceState
 });
+

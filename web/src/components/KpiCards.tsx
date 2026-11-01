@@ -197,3 +197,4 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ telemetry, thresholdCm }) =>
     </div>
   );
 };
+

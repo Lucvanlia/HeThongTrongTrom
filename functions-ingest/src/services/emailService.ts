@@ -76,3 +76,4 @@ export async function sendOfflineEmailNotification(deviceId: string, lastSeen: s
     console.error("[EmailService] Lỗi khi gọi webhook Logic Apps gửi email offline:", err.message);
   }
 }
+

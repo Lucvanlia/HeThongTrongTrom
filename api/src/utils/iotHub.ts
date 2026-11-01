@@ -5,3 +5,4 @@ const registryConnString = process.env.IOT_HUB_REGISTRY_CONNECTION_STRING || pro
 
 export const iotServiceClient = serviceConnString ? Client.fromConnectionString(serviceConnString) : null;
 export const iotRegistryClient = registryConnString ? Registry.fromConnectionString(registryConnString) : null;
+

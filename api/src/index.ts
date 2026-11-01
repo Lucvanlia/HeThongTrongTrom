@@ -5,3 +5,4 @@ import "./functions/history";
 import "./functions/adminConfig";
 
 console.log("Azure Static Web Apps Managed API v4 initialized successfully.");
+

@@ -75,3 +75,4 @@ export const AlertsList: React.FC<AlertsListProps> = ({ alerts }) => {
     </div>
   );
 };
+

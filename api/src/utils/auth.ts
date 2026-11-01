@@ -40,3 +40,4 @@ export function hasRole(principal: ClientPrincipal | null, requiredRoles: string
   if (!principal) return false;
   return requiredRoles.some(role => principal.userRoles.includes(role));
 }
+

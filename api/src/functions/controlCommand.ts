@@ -86,3 +86,4 @@ app.http("controlCommand", {
   route: "control/command",
   handler: controlCommand
 });
+

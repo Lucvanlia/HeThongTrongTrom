@@ -51,3 +51,4 @@ export interface AlertEntity {
   pirDetected: boolean;
   doorLocked: boolean;
 }
+

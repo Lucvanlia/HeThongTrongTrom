@@ -94,3 +94,4 @@ export const Header: React.FC<HeaderProps> = ({ wsStatus, deviceOnline, user, ha
     </header>
   );
 };
+

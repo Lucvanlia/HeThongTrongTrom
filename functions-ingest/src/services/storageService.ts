@@ -109,3 +109,4 @@ export async function saveAlert(payload: TelemetryPayload): Promise<void> {
 
   await alertsTable.upsertEntity(entity, "Merge");
 }
+

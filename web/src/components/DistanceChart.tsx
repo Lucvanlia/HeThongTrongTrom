@@ -256,3 +256,4 @@ export const DistanceChart: React.FC<DistanceChartProps> = ({ data, thresholdCm 
     </div>
   );
 };
+

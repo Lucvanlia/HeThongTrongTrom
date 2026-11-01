@@ -56,3 +56,4 @@ app.eventHub("telemetryIngest", {
   cardinality: "many",
   handler: telemetryIngest
 });
+

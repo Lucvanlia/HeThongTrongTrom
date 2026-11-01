@@ -81,6 +81,18 @@
     - Cập nhật mô phỏng Wokwi (`diagram.json`) với nút bấm `btn_exit` nối chân `esp:27` và `GND`.
     - Biên dịch PlatformIO thành công 100%: RAM 14.3% (46.8KB), Flash 72.9% (954KB).
 
+12. **Nâng cấp Giao diện Google Stitch sang Light Mode & Font Chuẩn Việt (Be Vietnam Pro)**:
+    - Cập nhật Design System `assets/80b0b39854934ac38382e6f65821c2eb` ("IOT-TRONGCHOM Light Vietnamese") trên Google Stitch project `7398197897344548220`:
+      * Đổi theme sang **Light Mode** (Canvas `#f8fafc` / `#ffffff`, Cards `#ffffff` với viền `#e2e8f0`).
+      * Đổi typography sang **`Be Vietnam Pro`** chuẩn tiếng Việt 100% không lỗi phông, kết hợp `Public Sans` cho dữ liệu số kỹ thuật.
+    - **Tạo Màn hình 1 (Slide 1 - Live Security Center - Light Mode)**:
+      * Screen ID: `f0d6cbe61a4d4a6e9c6e08764b1a88f0`, kích thước `2560 x 2574 px`.
+      * Tình trạng ARMED an toàn, 6 thẻ KPI, cự ly 125cm, đồ thị SVG cyan và nhật ký sự kiện.
+    - **Tạo Màn hình 2 (Slide 2 - Intrusion Alert State - Light Mode)**:
+      * Screen ID: `2252ed4f63684c1bbb2ca9ec695db62f`, kích thước `2560 x 2986 px`.
+      * Cảnh báo đột nhập khẩn cấp màu đỏ ruby `#e11d48`, cự ly vi phạm `28 cm` (< 50cm), PIR HIGH, còi hú 2Hz, servo khóa chặt 90°, email gửi qua Azure Logic Apps.
+
+
 
 
 

@@ -42,3 +42,4 @@ export interface UserPrincipal {
   identityProvider: string;
   userRoles: string[];
 }
+

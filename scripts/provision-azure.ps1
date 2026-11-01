@@ -205,3 +205,4 @@ Write-Host "1. ESP32: Điền IoTHub.HostName và DeviceKey vào file 'include/s
 Write-Host "2. Functions Ingest: Điền StorageConnectionString, IoTHubEventHubConnString, WebPubSubConnString vào 'functions-ingest/local.settings.json'."
 Write-Host "3. Static Web App: Điền WebPubSubConnString và IoTHubServiceConnString vào App Settings của SWA."
 Write-Host "==========================================================" -ForegroundColor Green
+
