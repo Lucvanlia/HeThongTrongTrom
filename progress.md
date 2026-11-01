@@ -41,4 +41,34 @@
    - Bổ sung linh kiện Rơ-le 5V vào sơ đồ mạch mô phỏng `diagram.json`.
    - Biên dịch thành công 100% PlatformIO: RAM 14.3% (46.8KB), Flash 72.8% (954KB). Firmware version 2.2.0.
 
+8. **Triển khai Serverless Azure Backend (`functions-ingest/` & `api/`)**:
+   - Viết script tự động hóa khởi tạo toàn bộ hạ tầng đám mây `scripts/provision-azure.ps1` (Resource Group, Storage Account Table, IoT Hub F1, Web PubSub F1, Static Web Apps, Flex Consumption Function App).
+   - Xây dựng `functions-ingest/` (Node.js 20, v4 model):
+     * `telemetryIngest.ts`: Nhận tin từ Event Hub endpoint của IoT Hub, lưu Table Storage `history` & `devicestate`, ghi nhận `alerts`, broadcast Web PubSub <50ms, gửi email qua Logic Apps (kèm cooldown 5 phút chống spam).
+     * `offlineWatchdog.ts`: Timer trigger 1 phút, phát hiện thiết bị mất kết nối > 5 phút và gửi đúng 1 email cảnh báo.
+   - Xây dựng SWA Managed APIs (`api/`):
+     * `negotiate.ts` (`GET /api/realtime/negotiate`): Cấp token truy cập WebSocket Web PubSub.
+     * `controlCommand.ts` (`POST /api/control/command`): Gửi C2D Direct Method (`setArm`, `setLock`, `silenceAlarm`) tới ESP32, kiểm soát phân quyền RBAC (`admin`, `operator`).
+     * `history.ts` (`GET /api/history`, `GET /api/alerts`, `GET /api/state`): Truy vấn dữ liệu từ Azure Table Storage.
+     * `adminConfig.ts` (`GET /api/admin/config`, `PUT /api/admin/config`): Đọc và cập nhật Device Twin (`thresholdCm`, `telemetryIntervalMs`).
+   - Cả 2 project backend biên dịch TypeScript thành công 100%.
+
+9. **Xây dựng Giao Diện Web Dashboard (React 19 + TypeScript + Vite)**:
+   - Khởi tạo thư mục `web/` với React 19, TypeScript, Lucide Icons, và cấu hình Vite dev server proxy tới SWA functions.
+   - Thiết kế `azureClient.ts` quản lý WebSocket tự động kết nối lại (exponential backoff) và các REST method.
+   - Phát triển toàn bộ các component:
+     * `Header.tsx`: Thanh điều hướng hiện đại, biểu tượng khiên báo động, trạng thái WebPubSub, ESP32 Online/Offline, Easy Auth login GitHub/logout.
+     * `KpiCards.tsx`: 6 thẻ KPI hiển thị thời gian thực (Trạng thái Armed, Chốt cửa SG90, Còi cảnh báo, PIR HC-SR501, Thanh đo khoảng cách Sonar HC-SR04, IP & Sóng Wi-Fi).
+     * `ControlPanel.tsx`: Điều khiển ARM/DISARM, Đóng/Mở chốt khóa, Tắt còi khẩn cấp, tích hợp **Khóa chống bấm lặp (Pending Lock Ref) 3.5s**.
+     * `DistanceChart.tsx`: Biểu đồ SVG thuần Zero-Jitter chuẩn quy tắc kiến trúc (banner cố định `minHeight: 48px`, CLS = 0, đường ngưỡng đỏ nét đứt, tooltip hover mượt mà).
+     * `AlertsList.tsx`: Nhật ký sự cố đột nhập thời gian thực.
+     * `AdminConfigModal.tsx`: Hộp thoại điều chỉnh thông số ngưỡng Device Twin dành riêng cho Admin.
+     * `staticwebapp.config.json`: Cấu hình định tuyến và phân quyền RBAC Azure Static Web Apps.
+   - Biên dịch sản xuất `npm run build` thành công 100% trong 16.3s.
+
+10. **Cập nhật Knowledge Graph `graphify` & Git**:
+    - Kiến trúc đồ thị được cập nhật đạt 671 nodes, 1230 edges, 46 communities.
+    - Sẵn sàng đồng bộ toàn bộ lên GitHub repository.
+
+
 

@@ -1,0 +1,13 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AZURE_STORAGE_CONNECTION_STRING": "<DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net>",
+    "WEB_PUBSUB_CONNECTION_STRING": "<Endpoint=https://....webpubsub.azure.com;AccessKey=...;Version=1.0;>",
+    "WEB_PUBSUB_HUB_NAME": "iot",
+    "IOT_HUB_SERVICE_CONNECTION_STRING": "HostName=....azure-devices.net;SharedAccessKeyName=service;SharedAccessKey=...",
+    "IOT_HUB_REGISTRY_CONNECTION_STRING": "HostName=....azure-devices.net;SharedAccessKeyName=iothubowner;SharedAccessKey=...",
+    "DEFAULT_DEVICE_ID": "esp32_device_01"
+  }
+}

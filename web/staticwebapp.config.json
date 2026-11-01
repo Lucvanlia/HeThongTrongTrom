@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json.schemastore.org/staticwebapp.config.json",
+  "routes": [
+    {
+      "route": "/api/admin/*",
+      "allowedRoles": ["admin"]
+    },
+    {
+      "route": "/api/control/*",
+      "allowedRoles": ["admin", "operator"]
+    },
+    {
+      "route": "/api/realtime/*",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
+      "route": "/api/history*",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
+      "route": "/api/alerts*",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
+      "route": "/api/state*",
+      "allowedRoles": ["anonymous", "authenticated"]
+    }
+  ],
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/api/*", "/*.{png,jpg,gif,svg,ico,css,js}"]
+  },
+  "responseOverrides": {
+    "401": {
+      "redirect": "/.auth/login/github",
+      "statusCode": 302
+    },
+    "403": {
+      "statusCode": 403
+    }
+  },
+  "globalHeaders": {
+    "content-security-policy": "default-src 'self' https: data: wss: 'unsafe-inline' 'unsafe-eval';",
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin"
+  },
+  "mimeTypes": {
+    ".json": "application/json"
+  }
+}

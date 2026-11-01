@@ -1,0 +1,24 @@
+{
+  "name": "api",
+  "version": "1.0.0",
+  "description": "Azure Static Web Apps Managed Functions API for Smart IoT Intrusion Alarm System",
+  "main": "dist/src/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "clean": "rimraf dist",
+    "prestart": "npm run clean && npm run build",
+    "start": "func start"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.6.0",
+    "@azure/data-tables": "^13.2.2",
+    "@azure/web-pubsub": "^1.1.2",
+    "azure-iothub": "^1.16.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.10",
+    "rimraf": "^5.0.10",
+    "typescript": "^5.6.3"
+  }
+}

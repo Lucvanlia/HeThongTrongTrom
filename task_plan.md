@@ -18,21 +18,23 @@
 
 - [x] **Phase 3: Thiết lập Mô phỏng Wokwi trên VS Code**
   - [x] Tạo file cấu hình `wokwi.toml` liên kết firmware ELF/BIN
-  - [x] Thiết lập sơ đồ chân `diagram.json` (ESP32 DevKit, PIR, HC-SR04, Buzzer, LED Vàng, LED Xanh, cầu chia áp)
+  - [x] Thiết lập sơ đồ chân `diagram.json` (ESP32 DevKit, PIR, HC-SR04, Buzzer, LED Vàng, LED Xanh, cầu chia áp, Servo SG90, Relay 5V, LCD 1602 I2C)
   - [x] Sẵn sàng bấm Play mô phỏng trực quan trên VS Code Wokwi extension
 
-- [ ] **Phase 4: Triển khai Hạ tầng Serverless Azure Backend**
-  - [ ] Tạo script PowerShell tự động hóa khởi tạo tài nguyên (`scripts/provision-azure.ps1`)
-  - [ ] Xây dựng Function App Ingestion (`functions-ingest/`): `telemetryIngest` (Event Hub) + `offlineWatchdog` (Timer 1 min)
-  - [ ] Xây dựng SWA Managed APIs (`api/`): `negotiate`, `controlCommand`, `history`, `adminConfig`
+- [x] **Phase 4: Triển khai Hạ tầng Serverless Azure Backend**
+  - [x] Tạo script PowerShell tự động hóa khởi tạo tài nguyên (`scripts/provision-azure.ps1`)
+  - [x] Xây dựng Function App Ingestion (`functions-ingest/`): `telemetryIngest` (Event Hub) + `offlineWatchdog` (Timer 1 min)
+  - [x] Xây dựng SWA Managed APIs (`api/`): `negotiate`, `controlCommand`, `history`, `adminConfig`
+  - [x] Kiểm tra build TypeScript cho cả `functions-ingest/` và `api/` (thành công 100%)
 
-- [ ] **Phase 5: Xây dựng Giao diện Web Dashboard (React 19 + SWA)**
-  - [ ] Khởi tạo dự án Vite + React 19 + TypeScript trong thư mục `web/`
-  - [ ] Tích hợp WebSocket client kết nối Azure Web PubSub (`azureClient.ts`)
-  - [ ] Xây dựng các component: `Header`, `KpiCards`, `ControlPanel` (khóa 3.5s), `DistanceChart` (SVG zero-jitter), `AlertsList`
-  - [ ] Cấu hình routing & phân quyền RBAC (`web/staticwebapp.config.json`)
+- [x] **Phase 5: Xây dựng Giao diện Web Dashboard (React 19 + SWA)**
+  - [x] Khởi tạo dự án Vite + React 19 + TypeScript trong thư mục `web/`
+  - [x] Tích hợp WebSocket client kết nối Azure Web PubSub (`azureClient.ts`)
+  - [x] Xây dựng các component: `Header`, `KpiCards`, `ControlPanel` (khóa 3.5s), `DistanceChart` (SVG zero-jitter), `AlertsList`, `AdminConfigModal`
+  - [x] Cấu hình routing & phân quyền Easy Auth RBAC (`web/staticwebapp.config.json`)
+  - [x] Biên dịch sản xuất Vite thành công 100% (`dist/` ready)
 
-- [ ] **Phase 6: Lắp ráp Mạch thật & Kiểm thử Thực tế**
+- [/] **Phase 6: Lắp ráp Mạch thật & Kiểm thử Thực tế**
   - [ ] Lắp ráp linh kiện lên đế mở rộng 30 chân và testboard
   - [ ] Kiểm tra cầu chia áp 1kΩ/2kΩ cho chân ECHO cảm biến HC-SR04
   - [ ] Nạp firmware thực tế, kiểm tra kết nối Wi-Fi & gửi nhận dữ liệu lên Azure

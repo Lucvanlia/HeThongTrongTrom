@@ -13,12 +13,15 @@ include/secrets.h
 .env.*.local
 local.settings.json
 local.settings.*.json
+*credentials*.json
+scripts/azure_credentials.json
 
 # Web / Node
 node_modules/
 dist/
 build/
 *.log
+*.tsbuildinfo
 
 # Graphify Cache
 graphify-out/cache/

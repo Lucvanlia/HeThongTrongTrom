@@ -1,0 +1,13 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "IOT_HUB_EVENT_HUB_CONNECTION": "<Endpoint=sb://ihsuprodsres001dednamespace.servicebus.windows.net/...>",
+    "AZURE_STORAGE_CONNECTION_STRING": "<DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net>",
+    "WEB_PUBSUB_CONNECTION_STRING": "<Endpoint=https://....webpubsub.azure.com;AccessKey=...;Version=1.0;>",
+    "WEB_PUBSUB_HUB_NAME": "iot",
+    "LOGIC_APPS_ALARM_WEBHOOK_URL": "https://prod-XX.southeastasia.logic.azure.com:443/workflows/.../triggers/manual/paths/invoke?api-version=2016-10-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=...",
+    "LOGIC_APPS_OFFLINE_WEBHOOK_URL": "https://prod-XX.southeastasia.logic.azure.com:443/workflows/.../triggers/manual/paths/invoke?api-version=2016-10-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=..."
+  }
+}
