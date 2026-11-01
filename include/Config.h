@@ -15,6 +15,7 @@ namespace Config {
     // Cơ cấu chấp hành & hiển thị:
     constexpr uint8_t PIN_SERVO       = 19;   // Động cơ Servo SG90 (xung PWM điều khiển góc chốt cửa)
     constexpr uint8_t PIN_RELAY_SERVO = 25;   // Module Relay 5V cấp/ngắt nguồn cho Servo (Power-Gating)
+    constexpr uint8_t PIN_BUTTON_EXIT = 27;   // Nút nhấn mở cửa Exit Button trong nhà (kéo LOW khi bấm)
     constexpr uint8_t PIN_I2C_SDA     = 21;   // Chân I2C SDA cho màn hình LCD 16x2
     constexpr uint8_t PIN_I2C_SCL     = 22;   // Chân I2C SCL cho màn hình LCD 16x2
 
@@ -51,6 +52,9 @@ namespace Config {
     // =========================================================================
     constexpr uint32_t PIR_WARMUP_MS         = 30000;   // Bỏ qua 30s đầu để PIR ổn định nhiệt
     constexpr uint32_t ALARM_AUTO_SILENCE_MS = 60000;   // Tự tắt còi hú sau 60s nếu không ai can thiệp
+    constexpr uint32_t AUTO_RELOCK_DELAY_MS  = 5000;    // Tự động đóng chốt khóa sau 5 giây mở cửa
+    constexpr uint32_t EXIT_DELAY_MS         = 10000;   // Trễ 10s hoãn báo động khi người nhà ấn nút đi ra
+    constexpr uint32_t BUTTON_DEBOUNCE_MS    = 50;      // Thời gian chống dội phím (debounce)
     constexpr uint32_t SENSOR_INTERVAL_MS    = 200;     // Chu kỳ đọc cảm biến Core 1 (200ms non-blocking)
     constexpr uint32_t LCD_REFRESH_MS        = 500;     // Chu kỳ cập nhật màn hình LCD (500ms)
     constexpr uint32_t TELEMETRY_INTERVAL_MS = 15000;   // Chu kỳ gửi telemetry (15s = 5760 tin/ngày gói F1)
@@ -61,5 +65,5 @@ namespace Config {
     // =========================================================================
     // 7. PHIÊN BẢN HỆ THỐNG
     // =========================================================================
-    constexpr const char* FIRMWARE_VERSION   = "2.2.0";
+    constexpr const char* FIRMWARE_VERSION   = "2.3.0";
 }

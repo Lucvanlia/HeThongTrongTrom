@@ -70,5 +70,17 @@
     - Kiến trúc đồ thị được cập nhật đạt 671 nodes, 1230 edges, 46 communities.
     - Sẵn sàng đồng bộ toàn bộ lên GitHub repository.
 
+11. **Tích hợp Nút Nhấn Mở Cửa Thoát Hiểm (Exit Button - GPIO 27) & Cơ Chế Auto-Relock**:
+    - Cấu hình chân nút bấm: `GPIO 27` (sử dụng điện trở kéo lên nội bộ `INPUT_PULLUP`).
+    - Nâng cấp firmware `v2.3.0`:
+      * Cơ chế chống dội phím (Debounce 50ms) không gây xung nhiễu.
+      * Tự động mở chốt Servo 0° qua Rơ-le Power-Gating khi người nhà ấn nút.
+      * Tự động đóng chốt an toàn (Auto-Relock sau 5 giây).
+      * Cơ chế trễ lối ra (Exit Delay 10s): Tạm hoãn kích hoạt còi khi hệ thống đang ARMED để người nhà bước ra ngoài mà không bị còi hú nhầm.
+      * Hiển thị đếm ngược trực quan trên màn hình LCD 1602: `MO CUA (THOAT) / TU KHOA SAU: Xs`.
+    - Cập nhật mô phỏng Wokwi (`diagram.json`) với nút bấm `btn_exit` nối chân `esp:27` và `GND`.
+    - Biên dịch PlatformIO thành công 100%: RAM 14.3% (46.8KB), Flash 72.9% (954KB).
+
+
 
 

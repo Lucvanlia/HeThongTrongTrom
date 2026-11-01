@@ -26,6 +26,8 @@ struct SharedState {
     float    distanceCm = -1.0f;
     uint32_t alarmSinceMs = 0;
     uint16_t thresholdCm = Config::DEFAULT_DISTANCE_THRESHOLD_CM;
+    uint32_t autoRelockAtMs = 0;       // Hẹn giờ tự động khóa chốt lại sau 5s
+    uint32_t exitDelayUntilMs = 0;     // Hoãn báo động 10s khi người nhà ấn nút đi ra
 };
 
 struct AlertEvent {
@@ -142,11 +144,50 @@ static float readDistanceCm() {
 
 static void sensorTask(void* pvParameters) {
     TickType_t lastWakeTime = xTaskGetTickCount();
+    static bool lastBtnState = HIGH;
+    static unsigned long lastBtnDebounceMs = 0;
 
     for (;;) {
+        const unsigned long now = millis();
+
+        // 1. Đọc nút nhấn mở cửa bên trong nhà (Exit Button - Active LOW)
+        const bool curBtn = digitalRead(Config::PIN_BUTTON_EXIT);
+        if (curBtn != lastBtnState && (now - lastBtnDebounceMs > Config::BUTTON_DEBOUNCE_MS)) {
+            lastBtnDebounceMs = now;
+            lastBtnState = curBtn;
+            if (curBtn == LOW) {
+                // Người nhà ấn nút mở cửa thoát hiểm!
+                Serial.println("[BUTTON] Nguoi nha an nut Exit Button -> Mo chot cua!");
+                setLockState(false); // Mở chốt cửa 0 độ qua Rơ-le
+
+                portENTER_CRITICAL(&gMux);
+                g.autoRelockAtMs = now + Config::AUTO_RELOCK_DELAY_MS; // Tự động khóa lại sau 5s
+                if (g.armed) {
+                    g.exitDelayUntilMs = now + Config::EXIT_DELAY_MS; // Tạm hoãn báo động 10s để bước ra
+                    Serial.println("[SYSTEM] Kich hoat Exit Delay: Hoan bao dong 10s de nguoi buoc ra.");
+                }
+                portEXIT_CRITICAL(&gMux);
+            }
+        }
+
+        // 2. Tự động đóng chốt khóa cửa (Auto-Relock) sau khi hết 5 giây
+        bool triggerRelock = false;
+        portENTER_CRITICAL(&gMux);
+        if (g.autoRelockAtMs > 0 && now >= g.autoRelockAtMs) {
+            g.autoRelockAtMs = 0;
+            triggerRelock = true;
+        }
+        portEXIT_CRITICAL(&gMux);
+
+        if (triggerRelock) {
+            Serial.println("[ACTUATOR] Het 5 giay mo cua -> Tu dong dong chot khoa an toan (Auto-Relock)!");
+            setLockState(true); // Khóa chốt 90 độ qua Rơ-le
+        }
+
+        // 3. Đọc dữ liệu cảm biến
         const bool  pirVal     = (digitalRead(Config::PIN_PIR) == HIGH);
         const float distVal    = readDistanceCm();
-        const bool  warmupDone = (millis() > Config::PIR_WARMUP_MS);
+        const bool  warmupDone = (now > Config::PIR_WARMUP_MS);
         const char* alertSource = nullptr;
 
         portENTER_CRITICAL(&gMux);
@@ -154,8 +195,9 @@ static void sensorTask(void* pvParameters) {
         g.distanceCm = distVal;
 
         // Kiểm tra điều kiện kích hoạt báo động:
-        // Đang ARM, chưa ALARM, đã qua thời gian khởi động nhiệt
-        if (g.armed && !g.alarm && warmupDone) {
+        // Đang ARM, chưa ALARM, đã qua thời gian khởi động nhiệt PIR VÀ không trong thời gian hoãn Exit Delay
+        const bool exitDelayActive = (now < g.exitDelayUntilMs);
+        if (g.armed && !g.alarm && warmupDone && !exitDelayActive) {
             if (pirVal) {
                 alertSource = "PIR";
             } else if (distVal > 0.0f && distVal < (float)g.thresholdCm) {
@@ -164,12 +206,12 @@ static void sensorTask(void* pvParameters) {
 
             if (alertSource != nullptr) {
                 g.alarm = true;
-                g.alarmSinceMs = millis();
+                g.alarmSinceMs = now;
             }
         }
 
         // Tự động ngắt còi hú sau 60 giây nếu không có người tắt
-        if (g.alarm && (millis() - g.alarmSinceMs >= Config::ALARM_AUTO_SILENCE_MS)) {
+        if (g.alarm && (now - g.alarmSinceMs >= Config::ALARM_AUTO_SILENCE_MS)) {
             g.alarm = false;
         }
         portEXIT_CRITICAL(&gMux);
@@ -214,6 +256,11 @@ static void updateLcdDisplay(const SharedState& s) {
                 snprintf(line2, sizeof(line2), "NGUON: SONAR %dcm", (int)s.distanceCm);
             }
         }
+    } else if (s.autoRelockAtMs > 0 && now < s.autoRelockAtMs) {
+        // Màn hình khi người nhà ấn nút Exit Button mở cửa (Đếm ngược tự khóa)
+        const int secLeft = (int)((s.autoRelockAtMs - now + 999) / 1000);
+        snprintf(line1, sizeof(line1), "MO CUA (THOAT)  ");
+        snprintf(line2, sizeof(line2), "TU KHOA SAU: %ds ", secLeft);
     } else {
         // Dòng 1: Trạng thái hệ thống + Chốt khóa Servo
         if (s.armed) {
@@ -527,7 +574,7 @@ void setup() {
     Serial.printf("  Firmware: v%s | Power-Gating Relay + Servo + LCD\n", Config::FIRMWARE_VERSION);
     Serial.println("=======================================================");
 
-    // Khởi tạo các chân GPIO cảm biến, còi và Relay
+    // Khởi tạo các chân GPIO cảm biến, còi, nút nhấn và Relay
     pinMode(Config::PIN_PIR, INPUT);
     pinMode(Config::PIN_US_TRIG, OUTPUT);
     pinMode(Config::PIN_US_ECHO, INPUT);
@@ -535,6 +582,7 @@ void setup() {
     pinMode(Config::PIN_LED_ALARM, OUTPUT);
     pinMode(Config::PIN_LED_ARMED, OUTPUT);
     pinMode(Config::PIN_RELAY_SERVO, OUTPUT);
+    pinMode(Config::PIN_BUTTON_EXIT, INPUT_PULLUP); // Nút nhấn Exit Button mở cửa (trở kéo lên nội bộ)
 
     digitalWrite(Config::PIN_US_TRIG, LOW);
     digitalWrite(Config::PIN_BUZZER, LOW);
@@ -550,7 +598,7 @@ void setup() {
     lcd.setCursor(0, 0);
     lcd.print("  HE THONG IOT  ");
     lcd.setCursor(0, 1);
-    lcd.print(" CHONG TROM v2.2");
+    lcd.print(" CHONG TROM v2.3");
 
     // Khởi tạo Động cơ Servo SG90 (chốt cửa)
     ESP32PWM::allocateTimer(0);

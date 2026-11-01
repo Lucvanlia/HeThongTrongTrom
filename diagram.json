@@ -86,7 +86,14 @@
       "left": 211.2,
       "attrs": { "resistance": "2000", "value": "2000" }
     },
-    { "type": "wokwi-vcc", "id": "vcc1", "top": -143.24, "left": 720, "attrs": {} }
+    { "type": "wokwi-vcc", "id": "vcc1", "top": -143.24, "left": 720, "attrs": {} },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_exit",
+      "top": -90,
+      "left": -350,
+      "attrs": { "color": "green", "label": "EXIT (MO CUA)" }
+    }
   ],
   "connections": [
     [ "esp:TX", "$serialMonitor:RX", "", [] ],
@@ -116,14 +123,29 @@
     [ "lcd1:GND", "bb1:tn.2", "black", [ "h0" ] ],
     [ "lcd1:VCC", "bb1:tp.4", "red", [ "h0" ] ],
     [ "esp:25", "relay1:IN", "green", [ "v104.31", "h884.86", "v48.2" ] ],
-    [ "relay1:GND", "bb1:bn.50", "black", [ "h47.2", "v95.1" ] ],
+    [ "relay1:GND", "bb1:bn.50", "black", [ "h-86.4", "v-95.1" ] ],
     [ "relay1:VCC", "bb1:tp.50", "red", [ "h-38.4", "v-278.4" ] ],
     [ "relay1:COM", "vcc1:VCC", "red", [ "h0" ] ],
     [ "relay1:NO", "servo1:V+", "red", [ "h58.8", "v55.8", "h-268.8", "v95.8" ] ],
-    [ "esp:19", "servo1:PWM", "orange", [ "v-145.14", "h1080.06", "v240.4" ] ],
+    [ "esp:19", "servo1:PWM", "orange", [ "v-145.14", "h942.46", "v547" ] ],
     [ "servo1:GND", "bb1:tn.29", "black", [ "h0" ] ],
     [ "esp:23", "bz1:2", "red", [ "v-20.34", "h-55.94", "v355.2", "h470.4" ] ],
-    [ "bz1:1", "bb1:bn.3", "black", [ "v0" ] ]
+    [ "bz1:1", "bb1:bn.3", "black", [ "v0" ] ],
+    [ "esp:27", "btn_exit:1.l", "green", [ "v0" ] ],
+    [ "btn_exit:2.l", "bb1:bn.10", "black", [ "v0" ] ],
+    [ "pir1:VCC", "bb1:27t.a", "", [ "$bb" ] ],
+    [ "pir1:OUT", "bb1:28t.a", "", [ "$bb" ] ],
+    [ "pir1:GND", "bb1:29t.a", "", [ "$bb" ] ],
+    [ "sonar1:VCC", "bb1:48t.b", "", [ "$bb" ] ],
+    [ "sonar1:TRIG", "bb1:49t.b", "", [ "$bb" ] ],
+    [ "sonar1:ECHO", "bb1:50t.b", "", [ "$bb" ] ],
+    [ "sonar1:GND", "bb1:51t.b", "", [ "$bb" ] ],
+    [ "led_alarm:A", "bb1:8t.a", "", [ "$bb" ] ],
+    [ "led_alarm:C", "bb1:7t.a", "", [ "$bb" ] ],
+    [ "led_armed:A", "bb1:13t.a", "", [ "$bb" ] ],
+    [ "led_armed:C", "bb1:12t.a", "", [ "$bb" ] ],
+    [ "r_div1:1", "bb1:60b.h", "", [ "$bb" ] ],
+    [ "r_div1:2", "bb1:54b.h", "", [ "$bb" ] ]
   ],
   "dependencies": {}
 }

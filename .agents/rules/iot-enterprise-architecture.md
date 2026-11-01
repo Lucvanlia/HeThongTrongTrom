@@ -15,6 +15,7 @@ Toàn bộ hệ thống chạy trên **Microsoft Azure**, không dùng Firebase,
 - **LED Xanh (ARM)**: GPIO 4 (qua trở 220Ω, sáng liên tục khi ARMED)
 - **Servo SG90 (Chốt Cửa Khóa Thông Minh)**: PWM GPIO 19, điều khiển góc 0° (Mở) / 90° (Khóa)
 - **Rơ-le 5V (Power-Gating Servo)**: IN GPIO 25 (Active LOW), cách ly nguồn 5V khi servo không chuyển động
+- **Nút Nhấn Mở Cửa Thoát Hiểm (Exit Button)**: GPIO 27 (Active-LOW, INPUT_PULLUP), tự động đóng chốt sau 5s, hoãn báo động 10s khi người ra
 - **LCD 1602 I2C**: SDA GPIO 21, SCL GPIO 22, Địa chỉ 0x27 (Nguồn 5V)
 
 ## 2. NGUYÊN LÝ DUAL-CORE FREERTOS

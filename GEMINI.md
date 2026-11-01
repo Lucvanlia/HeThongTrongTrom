@@ -35,6 +35,7 @@
 | **LED Xanh (Armed)**| Anode (+) | **GPIO 4** | Via 220Ω resistor. Solid ON when system is ARMED, OFF when DISARMED. |
 | **Servo SG90** | PWM (Orange) | **GPIO 19** | Smart door lock. 0° (Unlocked), 90° (Locked). VCC via 5V Relay. |
 | **Relay 5V Module**| IN | **GPIO 25** | Power-gating for servo (Active-LOW). Isolates servo power when idle. |
+| **Nút Nhấn Exit** | 2 Chân | **GPIO 27** | Nút mở cửa trong nhà (Active-LOW, INPUT_PULLUP, Auto-Relock 5s, Exit Delay 10s). |
 | **LCD 1602 I2C** | SDA / SCL | **GPIO 21** / **GPIO 22** | Hardware I2C (Address 0x27). 5V VCC. Dual-line live status display. |
 
 ---
