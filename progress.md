@@ -96,3 +96,13 @@
 
 
 
+
+
+## 11. Nâng cấp Demo 3 Cấp Độ, Góc Mở 160 Độ & Độ Trễ 2 Giây (v2.4.2)
+- **Góc xoay Servo**: `SERVO_LOCK_ANGLE = 0` (Đóng chốt), `SERVO_UNLOCK_ANGLE = 160` (Mở toang 160° dứt khoát).
+- **Thời gian mở chốt**: Rút ngắn xuống `AUTO_RELOCK_DELAY_MS = 2000` (2 giây tự đóng).
+- **LED Xanh**: Sáng lên KHI VÀ CHỈ KHI cửa mở (`!doorLocked`), bình thường tắt.
+- **Kịch bản Demo 3 trường hợp**:
+  1. Phát hiện người từ xa (chỉ PIR có tín hiệu): LED Đỏ sáng đứng yên (Solid ON), còi không hú.
+  2. Tiếp cận gần sát cửa (PIR + Sonar <= 14cm): LED Đỏ nhấp nháy 2Hz dồn dập, còi hú cảnh báo.
+  3. Mở cửa (Nút Exit hoặc Tự động): Servo mở 160°, LED Xanh sáng 2s, sau đó tự đóng và tắt đèn.

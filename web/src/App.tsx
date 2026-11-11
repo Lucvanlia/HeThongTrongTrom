@@ -6,6 +6,7 @@ import { DistanceChart } from "./components/DistanceChart";
 import { AlertsList } from "./components/AlertsList";
 import { AdminConfigModal } from "./components/AdminConfigModal";
 import { AzureClient, ConnectionStatus } from "./lib/azureClient";
+import { FirebaseClient } from "./lib/firebaseClient";
 import { TelemetryData, HistoryPoint, AlertItem, DeviceConfig, UserPrincipal } from "./types";
 
 export const App: React.FC = () => {
@@ -17,90 +18,96 @@ export const App: React.FC = () => {
   const [config, setConfig] = useState<DeviceConfig>({ thresholdCm: 50, telemetryIntervalMs: 15000 });
   const [isConfigOpen, setIsConfigOpen] = useState<boolean>(false);
 
-  const clientRef = useRef<AzureClient | null>(null);
-
-  // Load ban đầu từ REST APIs
+  // Load ban đầu từ REST APIs / Azure Cold Storage
   const loadInitialData = useCallback(async () => {
-    // 1. Trạng thái thiết bị tức thời
-    const state = await AzureClient.fetchDeviceState();
-    if (state) {
-      setTelemetry((prev) => ({ ...prev, ...state }));
-    }
+    try {
+      // 1. Lịch sử đo đạc từ Azure Table Storage
+      const hist = await AzureClient.fetchHistory();
+      if (hist && hist.length > 0) {
+        setHistory(hist);
+      }
 
-    // 2. Lịch sử đo đạc để vẽ biểu đồ
-    const hist = await AzureClient.fetchHistory();
-    if (hist && hist.length > 0) {
-      setHistory(hist);
-    }
+      // 2. Danh sách cảnh báo đã ghi nhận từ Azure
+      const alertList = await AzureClient.fetchAlerts();
+      if (alertList && alertList.length > 0) {
+        setAlerts(alertList);
+      }
 
-    // 3. Danh sách cảnh báo đã ghi nhận
-    const alertList = await AzureClient.fetchAlerts();
-    if (alertList && alertList.length > 0) {
-      setAlerts(alertList);
-    }
-
-    // 4. Cấu hình Device Twin
-    const adminCfg = await AzureClient.fetchAdminConfig();
-    if (adminCfg) {
-      setConfig(adminCfg);
-    }
-
-    // 5. Thông tin phân quyền Easy Auth
-    const userInfo = await AzureClient.fetchUserPrincipal();
-    if (userInfo) {
-      setUser(userInfo);
+      // 3. Thông tin phân quyền Easy Auth
+      const userInfo = await AzureClient.fetchUserPrincipal();
+      if (userInfo) {
+        setUser(userInfo);
+      }
+    } catch (e) {
+      console.warn("[App] Azure initial load notice:", e);
     }
   }, []);
 
   useEffect(() => {
     loadInitialData();
 
-    // Khởi tạo WebSocket kết nối Azure Web PubSub
-    const client = new AzureClient({
-      onTelemetry: (newData) => {
-        setTelemetry((prev) => ({ ...prev, ...newData, status: "ONLINE" }));
-        setHistory((prev) => {
-          const newPoint: HistoryPoint = {
-            timestamp: new Date().toISOString(),
-            distanceCm: newData.distanceCm,
-            pirDetected: newData.pirDetected,
-            armed: newData.armed,
-            alarm: newData.alarm,
-            doorLocked: newData.doorLocked,
-            rssi: newData.rssi ?? 0
-          };
-          const next = [...prev, newPoint];
-          return next.slice(-100); // Giữ tối đa 100 điểm gần nhất
-        });
-      },
-      onAlert: (alertData) => {
-        setTelemetry((prev) => (prev ? { ...prev, alarm: true } : null));
-        setAlerts((prev) => [
-          {
-            id: alertData.alertTime || Date.now().toString(),
-            deviceId: alertData.deviceId || "esp32_device_01",
-            timestamp: alertData.alertTime || new Date().toISOString(),
-            alertSource: alertData.alertSource || "Báo Động",
-            distanceCm: alertData.distanceCm ?? 0,
-            pirDetected: alertData.pirDetected ?? false,
-            doorLocked: alertData.doorLocked ?? false
-          },
-          ...prev
-        ]);
-      },
-      onDeviceOffline: (offlineData) => {
-        setTelemetry((prev) => prev ? { ...prev, status: "OFFLINE" } : null);
-      },
-      onStatusChange: (status) => {
-        setWsStatus(status);
+    // 1. Lắng nghe HOT PATH: Firebase Realtime Database (<50ms)
+    const unsubTelemetry = FirebaseClient.subscribeTelemetry((newData) => {
+      setTelemetry((prev) => ({ ...prev, ...newData, status: "ONLINE" }));
+      setWsStatus("CONNECTED");
+      setHistory((prev) => {
+        const newPoint: HistoryPoint = {
+          timestamp: new Date().toISOString(),
+          distanceCm: newData.distanceCm,
+          pirDetected: newData.pirDetected,
+          armed: newData.armed,
+          alarm: newData.alarm,
+          doorLocked: newData.doorLocked,
+          rssi: newData.rssi ?? 0
+        };
+        const next = [...prev, newPoint];
+        return next.slice(-100); // Giữ tối đa 100 điểm gần nhất
+      });
+    });
+
+    // 2. Lắng nghe trạng thái thiết bị từ Firebase
+    const unsubStatus = FirebaseClient.subscribeStatus((online) => {
+      setTelemetry((prev) => prev ? { ...prev, status: online ? "ONLINE" : "OFFLINE" } : null);
+    });
+
+    // 3. Lắng nghe danh sách cảnh báo đột nhập từ Firebase
+    const unsubAlerts = FirebaseClient.subscribeAlerts((items) => {
+      if (items.length > 0) {
+        setAlerts(items);
       }
     });
 
-    clientRef.current = client;
-    client.connect();
+    // 4. Lắng nghe cấu hình Device Config từ Firebase
+    const unsubConfig = FirebaseClient.subscribeConfig((newCfg) => {
+      setConfig(newCfg);
+    });
+
+    // 5. Fallback: Kết nối song song với Azure Web PubSub nếu cần
+    const azureClient = new AzureClient({
+      onTelemetry: (newData) => {
+        setTelemetry((prev) => ({ ...prev, ...newData, status: "ONLINE" }));
+      },
+      onAlert: (alertData) => {
+        setTelemetry((prev) => (prev ? { ...prev, alarm: true } : null));
+      },
+      onDeviceOffline: () => {
+        setTelemetry((prev) => prev ? { ...prev, status: "OFFLINE" } : null);
+      },
+      onStatusChange: (status) => {
+        // Chỉ cập nhật nếu Firebase chưa kết nối
+        if (wsStatus !== "CONNECTED") {
+          setWsStatus(status);
+        }
+      }
+    });
+    azureClient.connect();
 
     return () => {
-      client.disconnect();
+      unsubTelemetry();
+      unsubStatus();
+      unsubAlerts();
+      unsubConfig();
+      azureClient.disconnect();
     };
   }, [loadInitialData]);
 
@@ -123,7 +130,7 @@ export const App: React.FC = () => {
         thresholdCm={config.thresholdCm}
       />
 
-      {/* 3. Bảng điều khiển Direct Method C2D (Khóa chống bấm lặp 3.5s) */}
+      {/* 3. Bảng điều khiển Hybrid Cloud (Khóa chống bấm lặp 3.5s) */}
       <ControlPanel
         telemetry={telemetry}
         onRefresh={loadInitialData}
@@ -141,7 +148,7 @@ export const App: React.FC = () => {
         />
       </div>
 
-      {/* 5. Modal cài đặt Device Twin cho Admin */}
+      {/* 5. Modal cài đặt Device Config */}
       <AdminConfigModal
         isOpen={isConfigOpen}
         onClose={() => setIsConfigOpen(false)}
@@ -151,9 +158,8 @@ export const App: React.FC = () => {
 
       {/* Footer */}
       <footer style={{ marginTop: "40px", textAlign: "center", color: "var(--text-muted)", fontSize: "0.8rem", paddingBottom: "20px" }}>
-        <p>Hệ Thống Báo Động Chống Trộm IoT • Kiến Trúc Thuần 100% Microsoft Azure • Dual-Core ESP32 FreeRTOS</p>
+        <p>Hệ Thống Báo Động Chống Trộm IoT • Hybrid Cloud: Firebase Realtime Database & Microsoft Azure • Dual-Core ESP32</p>
       </footer>
     </div>
   );
 };
-

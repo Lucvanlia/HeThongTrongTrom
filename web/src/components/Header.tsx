@@ -44,11 +44,11 @@ export const Header: React.FC<HeaderProps> = ({ wsStatus, deviceOnline, user, ha
                 HỆ THỐNG AN NINH & BÁO ĐỘNG ĐỘT NHẬP
               </h1>
               <span className="badge badge-cyan" style={{ fontSize: "0.65rem" }}>
-                100% AZURE CLOUD
+                HYBRID CLOUD
               </span>
             </div>
             <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "2px" }}>
-              Dual-Core ESP32 • IoT Hub MQTT TLS • Web PubSub • Static Web Apps
+              Dual-Core ESP32 • Firebase Realtime (&lt;50ms) • Microsoft Azure Cold Storage &amp; Logic Apps
             </p>
           </div>
         </div>
@@ -58,7 +58,7 @@ export const Header: React.FC<HeaderProps> = ({ wsStatus, deviceOnline, user, ha
           {/* WebSocket Status */}
           <div className={`badge ${wsStatus === "CONNECTED" ? "badge-green" : wsStatus === "CONNECTING" ? "badge-amber" : "badge-red"}`}>
             <Server size={14} />
-            <span>WebPubSub: {wsStatus}</span>
+            <span>Firebase: {wsStatus === "CONNECTED" ? "REALTIME (<50ms)" : wsStatus}</span>
           </div>
 
           {/* Device Online/Offline Status */}

@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import { Shield, ShieldOff, Lock, Unlock, VolumeX, Settings, RefreshCw, Loader2 } from "lucide-react";
 import { AzureClient } from "../lib/azureClient";
+import { FirebaseClient } from "../lib/firebaseClient";
 import { TelemetryData } from "../types";
 
 interface ControlPanelProps {
@@ -27,15 +28,22 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ telemetry, onRefresh
 
     pendingLockRef.current = true;
     setIsPending(true);
-    setStatusMessage("Đang gửi lệnh Direct Method tới ESP32...");
+    setStatusMessage("Đang gửi lệnh Realtime tới ESP32...");
 
     try {
-      const res = await AzureClient.sendCommand(command, payload);
-      if (res.success) {
-        setStatusMessage(res.message || "Đã gửi lệnh thành công.");
-      } else {
-        setStatusMessage(`Lỗi: ${res.message}`);
+      if (command === "setArm") {
+        await FirebaseClient.setArmed(payload?.value ?? true);
+        setStatusMessage(payload?.value ? "Đã bật bảo vệ ARMED (Firebase Realtime)" : "Đã tắt bảo vệ DISARM (Firebase Realtime)");
+      } else if (command === "setLock") {
+        await FirebaseClient.setLock(payload?.value ?? true);
+        setStatusMessage(payload?.value ? "Đã khóa chốt cửa (90°)" : "Đã mở chốt cửa (0°)");
+      } else if (command === "silenceAlarm") {
+        await FirebaseClient.silenceAlarm();
+        setStatusMessage("Đã tắt còi báo động khẩn cấp");
       }
+
+      // Gửi đồng thời Direct Method qua Azure C2D (Fallback)
+      AzureClient.sendCommand(command, payload).catch(() => {});
     } catch (err: any) {
       setStatusMessage(`Lỗi: ${err.message}`);
     } finally {
@@ -53,7 +61,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ telemetry, onRefresh
         <div>
           <h3 style={{ fontSize: "1.1rem", fontWeight: 700 }}>Bảng Điều Khiển Thiết Bị</h3>
           <p style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-            Thực thi C2D Direct Method qua Azure IoT Hub (Khóa chống bấm lặp 3.5s)
+            Điều khiển Realtime (Đám mây kép Firebase & Azure - Khóa chống bấm lặp 3.5s)
           </p>
         </div>
 

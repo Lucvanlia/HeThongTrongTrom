@@ -6,11 +6,17 @@
 .vscode/ipch
 compile_commands.json
 
-# Secrets & Local Configurations
+# Secrets & Local Configurations (Bảo mật tuyệt đối thông tin nhạy cảm)
 include/secrets.h
-*.env.local
 .env
-.env.*.local
+.env.*
+.env*.local
+*.env
+*.env.local
+!*.example
+!*.example.*
+!.env.example
+!web/.env.example
 local.settings.json
 local.settings.*.json
 *credentials*.json

@@ -9,12 +9,13 @@ namespace Config {
     constexpr uint8_t PIN_US_TRIG     = 5;    // Cảm biến siêu âm HC-SR04 Trigger (xuất xung 10µs)
     constexpr uint8_t PIN_US_ECHO     = 18;   // Cảm biến siêu âm HC-SR04 Echo (qua cầu chia áp 1kΩ/2kΩ)
     constexpr uint8_t PIN_BUZZER      = 23;   // Active Buzzer 3V (CẤM dùng GPIO 12 strapping pin)
-    constexpr uint8_t PIN_LED_ALARM   = 2;    // LED Vàng cảnh báo (nhấp nháy 2Hz khi có trộm)
-    constexpr uint8_t PIN_LED_ARMED   = 4;    // LED Xanh trạng thái (sáng khi ARMED, tắt khi DISARMED)
+    constexpr uint8_t PIN_LED_ALARM   = 32;   // Dãy LED Đỏ cảnh báo (chân D32 - nhấp nháy khi có trộm)
+    constexpr uint8_t PIN_LED_ARMED   = 33;   // Dãy LED Xanh trạng thái (chân D33 - sáng khi bật ARMED)
 
     // Cơ cấu chấp hành & hiển thị:
     constexpr uint8_t PIN_SERVO       = 19;   // Động cơ Servo SG90 (xung PWM điều khiển góc chốt cửa)
     constexpr uint8_t PIN_RELAY_SERVO = 25;   // Module Relay 5V cấp/ngắt nguồn cho Servo (Power-Gating)
+    constexpr uint8_t PIN_SWITCH_ARM  = 26;   // Công tắc gạt 3 chân: Bật/Tắt chế độ bảo vệ Offline (ARM/DISARM)
     constexpr uint8_t PIN_BUTTON_EXIT = 27;   // Nút nhấn mở cửa Exit Button trong nhà (kéo LOW khi bấm)
     constexpr uint8_t PIN_I2C_SDA     = 21;   // Chân I2C SDA cho màn hình LCD 16x2
     constexpr uint8_t PIN_I2C_SCL     = 22;   // Chân I2C SCL cho màn hình LCD 16x2
@@ -29,9 +30,11 @@ namespace Config {
     // =========================================================================
     // 3. THAM SỐ GÓC XOAY SERVO (CHỐT CỬA TỰ ĐỘNG)
     // =========================================================================
-    constexpr int SERVO_UNLOCK_ANGLE  = 0;    // Góc mở chốt cửa (DISARMED)
-    constexpr int SERVO_LOCK_ANGLE    = 90;   // Góc đóng chốt an toàn (ARMED)
-    constexpr uint32_t SERVO_MOVE_TIME_MS = 600; // Thời gian chờ servo quay xong trước khi ngắt điện
+    constexpr int SERVO_LOCK_ANGLE    = 0;    // 0 độ: Đóng chốt khóa an toàn
+    constexpr int SERVO_UNLOCK_ANGLE  = 160;  // 160 độ: Mở toang chốt cửa dứt khoát
+    constexpr uint32_t SERVO_MOVE_TIME_MS = 450; // Chuyển động nhanh dứt khoát (450ms)
+    constexpr int SERVO_MIN_US        = 600;  // Giới hạn xung tối thiểu (600µs chống kẹt ngàm cơ khí SG90)
+    constexpr int SERVO_MAX_US        = 2400; // Giới hạn xung tối đa (2400µs đạt tới 160 độ)
 
     // =========================================================================
     // 4. THAM SỐ MÀN HÌNH LCD 1602 I2C
@@ -51,8 +54,8 @@ namespace Config {
     // 6. THỜI GIAN & CHU KỲ (MILLISECONDS)
     // =========================================================================
     constexpr uint32_t PIR_WARMUP_MS         = 30000;   // Bỏ qua 30s đầu để PIR ổn định nhiệt
-    constexpr uint32_t ALARM_AUTO_SILENCE_MS = 60000;   // Tự tắt còi hú sau 60s nếu không ai can thiệp
-    constexpr uint32_t AUTO_RELOCK_DELAY_MS  = 5000;    // Tự động đóng chốt khóa sau 5 giây mở cửa
+    constexpr uint32_t ALARM_AUTO_SILENCE_MS = 10000;   // Tối đa 10s tự tắt nếu không còn người (chống hú kéo dài)
+    constexpr uint32_t AUTO_RELOCK_DELAY_MS  = 2000;    // Rút ngắn còn 2 giây tự động đóng khóa cửa
     constexpr uint32_t EXIT_DELAY_MS         = 10000;   // Trễ 10s hoãn báo động khi người nhà ấn nút đi ra
     constexpr uint32_t BUTTON_DEBOUNCE_MS    = 50;      // Thời gian chống dội phím (debounce)
     constexpr uint32_t SENSOR_INTERVAL_MS    = 200;     // Chu kỳ đọc cảm biến Core 1 (200ms non-blocking)
@@ -65,5 +68,15 @@ namespace Config {
     // =========================================================================
     // 7. PHIÊN BẢN HỆ THỐNG
     // =========================================================================
-    constexpr const char* FIRMWARE_VERSION   = "2.3.0";
+    constexpr const char* FIRMWARE_VERSION   = "2.4.0"; // Hybrid Cloud Firebase + Azure
+
+    // =========================================================================
+    // 8. CẤU TRÚC FIREBASE REALTIME DATABASE (HOT PATH)
+    // =========================================================================
+    constexpr const char* FB_PATH_TELEMETRY  = "/security/telemetry.json";
+    constexpr const char* FB_PATH_STATUS     = "/security/status.json";
+    constexpr const char* FB_PATH_CONTROL    = "/security/control.json";
+    constexpr const char* FB_PATH_ALERTS     = "/security/alerts.json";
+    constexpr uint32_t FB_STREAM_INTERVAL_MS = 1000;   // Đẩy telemetry lên Firebase mỗi 1 giây (Hot Path)
+    constexpr uint32_t FB_POLL_CONTROL_MS    = 500;    // Đọc lệnh điều khiển từ Web mỗi 500ms
 }

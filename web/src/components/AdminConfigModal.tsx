@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { X, Save, AlertCircle, CheckCircle2, Loader2, Settings } from "lucide-react";
 import { AzureClient } from "../lib/azureClient";
+import { FirebaseClient } from "../lib/firebaseClient";
 import { DeviceConfig } from "../types";
 
 interface AdminConfigModalProps {
@@ -28,6 +29,10 @@ export const AdminConfigModal: React.FC<AdminConfigModalProps> = ({
     setIsSaving(true);
     setMessage(null);
 
+    // 1. Cập nhật Hot Path: Firebase Realtime
+    FirebaseClient.updateConfig(Number(thresholdCm), Number(telemetryIntervalMs)).catch(() => {});
+
+    // 2. Cập nhật Cold Path: Azure Device Twin
     const res = await AzureClient.updateAdminConfig({
       thresholdCm: Number(thresholdCm),
       telemetryIntervalMs: Number(telemetryIntervalMs)

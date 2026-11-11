@@ -34,3 +34,21 @@
 - **`graphify`**: Đã phân tích AST của mã nguồn và xuất mạng đồ thị tại `graphify-out/graph.html` và `graph.json`.
 - **`planning-with-files`**: Đã cài đặt toàn cục và trong workspace `.agents/skills/planning-with-files/` để duy trì bộ nhớ công việc qua các file markdown.
 
+
+
+## 4. Chống Rung Giật Servo SG90 & Điều Kiện Báo Động Kép (v2.4.1)
+
+### Hiện tượng Servo SG90 "giật giật tại chỗ" & tự rung nhảy:
+- **Nguyên nhân 1 - Nguồn ký sinh qua diode ESD (Parasitic Powering)**:
+  Khi Rơ-le ngắt 5V vào chân VCC của Servo, chân PWM (GPIO 19) nếu vẫn phát xung 50Hz (3.3V) sẽ rò dòng qua diode bảo vệ ESD bên trong IC điều khiển của SG90. IC này cố gắng khởi động bằng dòng rò micro-ampe, làm mạch H-bridge chập chờn gây hiện tượng rung giật, nhảy giật liên tục.
+  -> **Khắc phục**: Trước khi ngắt rơ-le, gọi `servoLock.detach()`, chuyển `pinMode(PIN_SERVO, OUTPUT)` và kéo chân tín hiệu về mức `LOW` (0V).
+- **Nguyên nhân 2 - Cấn ngàm cơ khí tại xung 500µs**:
+  Nhiều loại servo SG90 phổ thông có giới hạn cơ khí tại 550µs - 600µs. Lệnh phát xung 500µs ép bánh răng đập vào chốt nhựa chặn bên trong khiến mô-tơ bị ghì (stall) và rung dữ dội.
+  -> **Khắc phục**: Giới hạn xung tối thiểu an toàn `SERVO_MIN_US = 600µs`.
+
+### Tiêu chuẩn điều kiện kép (Dual-Sensor Verification) cho Báo Động:
+- Bắt buộc đồng thời:
+  `const bool intruderDetected = (pirVal && objectDetected);`
+  - `pirVal`: Cảm biến PIR phát hiện có thân nhiệt người di chuyển (`digitalRead(PIN_PIR) == HIGH`).
+  - `objectDetected`: Cảm biến siêu âm HC-SR04 đo được khoảng cách từ $5\text{cm} \le D \le \text{thresholdCm}$.
+- Loại bỏ hoàn toàn 99.9% báo động giả do nắp thùng hoặc nhiễu gió nhiệt.

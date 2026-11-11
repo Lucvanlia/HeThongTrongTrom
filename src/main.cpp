@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <HTTPClient.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
@@ -8,12 +9,11 @@
 #include <LiquidCrystal_I2C.h>
 #include <ESP32Servo.h>
 #include <time.h>
-#include <mbedtls/md.h>
-#include <mbedtls/base64.h>
 #include "Config.h"
 #include "secrets.h"
 
 using namespace system_secrets;
+using namespace Config;
 
 // ============================================================================
 // 1. DỮ LIỆU DÙNG CHUNG GIỮA 2 NHÂN (SHARED STATE & MUTEX)
@@ -22,12 +22,13 @@ struct SharedState {
     bool     armed = false;
     bool     alarm = false;
     bool     pir = false;
-    bool     doorLocked = false;
+    bool     doorLocked = true;        // Mặc định cửa đóng
     float    distanceCm = -1.0f;
     uint32_t alarmSinceMs = 0;
-    uint16_t thresholdCm = Config::DEFAULT_DISTANCE_THRESHOLD_CM;
-    uint32_t autoRelockAtMs = 0;       // Hẹn giờ tự động khóa chốt lại sau 5s
+    uint16_t thresholdCm = 12;         // Ngưỡng tiếp cận gần (12cm: <12cm là tay/người, 14cm là mặt bàn trống)
+    uint32_t autoRelockAtMs = 0;       // Hẹn giờ tự động đóng chốt lại sau 5s
     uint32_t exitDelayUntilMs = 0;     // Hoãn báo động 10s khi người nhà ấn nút đi ra
+    bool     autoDoorGuestActive = false; // Cờ báo cửa đang mở đón khách
 };
 
 struct AlertEvent {
@@ -41,14 +42,30 @@ static QueueHandle_t      alertQueue;
 static Preferences        prefs;
 static volatile bool      reportPending = true;
 
+// -----------------------------------------------------------------------------
+// CẤU HÌNH CỰC TÍNH VÀ ÂM THANH
+// -----------------------------------------------------------------------------
+// Dãy LED qua Transistor A1015 (PNP): LOW = SÁNG, HIGH = TẮT
+constexpr bool INVERT_LEDS = true;
+
+// Bật/Tắt còi báo động (Nếu cần test im lặng không ồn thì đổi thành false)
+constexpr bool ENABLE_BUZZER = true;
+
 // Thiết bị ngoại vi I2C và Servo
 static LiquidCrystal_I2C  lcd(Config::LCD_I2C_ADDR, Config::LCD_COLS, Config::LCD_ROWS);
 static Servo              servoLock;
 
-// Kết nối mạng TLS & MQTT
+// Kết nối mạng TLS & MQTT Azure + HTTP Client Firebase
 static WiFiClientSecure   tlsClient;
-static PubSubClient       mqtt(tlsClient);
-static time_t             sasExpiry = 0;
+
+// Helper điều khiển LED theo cực tính transistor A1015
+static inline void setLedAlarmPin(bool on) {
+    digitalWrite(Config::PIN_LED_ALARM, INVERT_LEDS ? (on ? LOW : HIGH) : (on ? HIGH : LOW));
+}
+
+static inline void setLedArmedPin(bool on) {
+    digitalWrite(Config::PIN_LED_ARMED, INVERT_LEDS ? (on ? LOW : HIGH) : (on ? HIGH : LOW));
+}
 
 // Lấy bản sao an toàn của SharedState (Snapshot)
 static SharedState snapshot() {
@@ -62,33 +79,41 @@ static SharedState snapshot() {
 static uint64_t getEpochMs() {
     struct timeval tv;
     gettimeofday(&tv, nullptr);
-    if (tv.tv_sec < 1700000000L) return 0;   // Chưa đồng bộ NTP thành công
+    if (tv.tv_sec < 1700000000L) return 0;
     return (uint64_t)tv.tv_sec * 1000ULL + (uint64_t)(tv.tv_usec / 1000);
 }
 
 // ============================================================================
-// 2. CÁC HÀM XỬ LÝ LỆNH ĐIỀU KHIỂN CHẤP HÀNH (RELAY + SERVO, CÒI, TRẠNG THÁI)
+// 2. ĐIỀU KHIỂN CHẤP HÀNH (RELAY + SERVO CHỐT CỬA)
 // ============================================================================
 static void setLockState(bool locked) {
     portENTER_CRITICAL(&gMux);
     g.doorLocked = locked;
     portEXIT_CRITICAL(&gMux);
 
-    // KỸ THUẬT POWER-GATING:
-    // 1. Kích Relay BẬT cấp nguồn 5V cho Servo
+    // KỸ THUẬT POWER-GATING TRIỆT ĐỂ (CHỐNG RUNG GIẬT, CHỐNG DÒNG RÒ KÝ SINH):
+    // 1. Kích Rơ-le ĐÓNG cấp điện 5V cho Servo
     digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_ON);
-    vTaskDelay(pdMS_TO_TICKS(50)); // Chờ điện áp ổn định chống sụt áp
+    vTaskDelay(pdMS_TO_TICKS(80)); // Chờ điện áp 5V ổn định hoàn toàn
 
-    // 2. Phát xung điều khiển góc quay Servo
+    // 2. Gắn chân PWM và phát xung điều khiển góc quay (600µs - 2400µs an toàn)
+    servoLock.attach(Config::PIN_SERVO, Config::SERVO_MIN_US, Config::SERVO_MAX_US);
     servoLock.write(locked ? Config::SERVO_LOCK_ANGLE : Config::SERVO_UNLOCK_ANGLE);
-    vTaskDelay(pdMS_TO_TICKS(Config::SERVO_MOVE_TIME_MS)); // Chờ cánh tay cơ học gạt chốt xong (600ms)
+    vTaskDelay(pdMS_TO_TICKS(Config::SERVO_MOVE_TIME_MS)); // Chờ servo quay xong (600ms)
 
-    // 3. Kích Relay NGẮT hoàn toàn nguồn 5V vào Servo
+    // 3. NGẮT XUNG PWM (DETACH) VÀ KÉO CHÂN TÍN HIỆU VỀ 0V
+    // Triệt tiêu 100% dòng rò ký sinh qua diode ESD của servo (chống rung giật tại chỗ)
+    servoLock.detach();
+    pinMode(Config::PIN_SERVO, OUTPUT);
+    digitalWrite(Config::PIN_SERVO, LOW);
+    vTaskDelay(pdMS_TO_TICKS(30));
+
+    // 4. Kích Rơ-le NGẮT điện 5V cách ly hoàn toàn
     digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_OFF);
 
     reportPending = true;
-    Serial.printf("[ACTUATOR] Relay da cap nguon -> Xoay Servo -> Ngat dien an toan. Chot: %s (%d do)\n",
-                  locked ? "DONG KHOA" : "MO KHOA",
+    Serial.printf("[ACTUATOR] Chot cua: %s (%d do)\n",
+                  locked ? "DONG KHOA" : "MO CHOT",
                   locked ? Config::SERVO_LOCK_ANGLE : Config::SERVO_UNLOCK_ANGLE);
 }
 
@@ -96,16 +121,17 @@ static void setArmed(bool armed) {
     portENTER_CRITICAL(&gMux);
     g.armed = armed;
     if (!armed) {
-        g.alarm = false;            // DISARM luôn lập tức ngắt còi hú
+        g.alarm = false;            // DISARM lập tức ngắt còi hú và tắt báo động
+        g.autoDoorGuestActive = false;
     }
     portEXIT_CRITICAL(&gMux);
 
-    // Cơ chế an toàn tự động: BẬT bảo vệ -> Tự động đóng chốt cửa qua Relay + Servo
-    setLockState(armed);
+    // Khi chuyển chế độ: luôn đưa chốt về trạng thái đóng an toàn ban đầu
+    setLockState(true);
 
-    prefs.putBool("armed", armed);  // Lưu vào Flash NVS chống mất điện
+    prefs.putBool("armed", armed);
     reportPending = true;
-    Serial.printf("[SYSTEM] Che do bao ve: %s\n", armed ? "ARMED (BAT)" : "DISARMED (TAT)");
+    Serial.printf("[SYSTEM] Che do he thong: %s\n", armed ? "ARMED (BAT BAO VE)" : "DISARMED (CUA TU DONG THONG MINH)");
 }
 
 static void silenceAlarm() {
@@ -113,7 +139,7 @@ static void silenceAlarm() {
     g.alarm = false;
     portEXIT_CRITICAL(&gMux);
     reportPending = true;
-    Serial.println("[SYSTEM] Da tat coi bao dong (Giu nguyen trang thai ARM)");
+    Serial.println("[SYSTEM] Da tat coi bao dong");
 }
 
 static void setThreshold(int cm) {
@@ -127,7 +153,7 @@ static void setThreshold(int cm) {
 }
 
 // ============================================================================
-// 3. CORE 1: TÁC VỤ CẢM BIẾN & LOGIC BÁO ĐỘNG (Priority 2)
+// 3. CORE 1: TÁC VỤ CẢM BIẾN & LOGIC CỬA TỰ ĐỘNG / BÁO ĐỘNG (Priority 2)
 // ============================================================================
 static float readDistanceCm() {
     digitalWrite(Config::PIN_US_TRIG, LOW);
@@ -146,45 +172,60 @@ static void sensorTask(void* pvParameters) {
     TickType_t lastWakeTime = xTaskGetTickCount();
     static bool lastBtnState = HIGH;
     static unsigned long lastBtnDebounceMs = 0;
+    static bool lastSwitchState = HIGH;
+    static unsigned long lastSwitchDebounceMs = 0;
+    static unsigned long lastIntruderSeenMs = 0;
 
     for (;;) {
         const unsigned long now = millis();
 
-        // 1. Đọc nút nhấn mở cửa bên trong nhà (Exit Button - Active LOW)
+        // 1. ĐỌC CÔNG TẮC GẠT 3 CHÂN (Chân D26 - Ưu tiên điều khiển tại chỗ)
+        const bool curSwitch = digitalRead(Config::PIN_SWITCH_ARM);
+        if (curSwitch != lastSwitchState && (now - lastSwitchDebounceMs > 250)) {
+            lastSwitchDebounceMs = now;
+            lastSwitchState = curSwitch;
+            // Gạt sang chân nối GND (LOW) = ARMED (Bật bảo vệ)
+            // Gạt sang chân hở (HIGH) = DISARM (Cửa tự động đón khách)
+            const bool newArmed = (curSwitch == LOW);
+            Serial.printf("[SWITCH D26] Cong tac gat -> %s\n", newArmed ? "ARMED (BAT BAO VE)" : "DISARMED (CUA TU DONG)");
+            setArmed(newArmed);
+        }
+
+        // 2. ĐỌC NÚT NHẤN EXIT (Chân D27 - Mở cửa thoát hiểm & Tắt báo động)
         const bool curBtn = digitalRead(Config::PIN_BUTTON_EXIT);
         if (curBtn != lastBtnState && (now - lastBtnDebounceMs > Config::BUTTON_DEBOUNCE_MS)) {
             lastBtnDebounceMs = now;
             lastBtnState = curBtn;
             if (curBtn == LOW) {
-                // Người nhà ấn nút mở cửa thoát hiểm!
-                Serial.println("[BUTTON] Nguoi nha an nut Exit Button -> Mo chot cua!");
-                setLockState(false); // Mở chốt cửa 0 độ qua Rơ-le
+                Serial.println("[BUTTON D27] Nguoi nha an nut Exit -> Mo chot cua & Tat bao dong!");
+                silenceAlarm();      // Tắt còi ngay lập tức nếu đang hú
+                setLockState(false); // Mở chốt cửa về 0 độ
 
                 portENTER_CRITICAL(&gMux);
                 g.autoRelockAtMs = now + Config::AUTO_RELOCK_DELAY_MS; // Tự động khóa lại sau 5s
                 if (g.armed) {
-                    g.exitDelayUntilMs = now + Config::EXIT_DELAY_MS; // Tạm hoãn báo động 10s để bước ra
-                    Serial.println("[SYSTEM] Kich hoat Exit Delay: Hoan bao dong 10s de nguoi buoc ra.");
+                    g.exitDelayUntilMs = now + Config::EXIT_DELAY_MS; // Hoãn báo động 10s để bước ra
                 }
                 portEXIT_CRITICAL(&gMux);
             }
         }
 
-        // 2. Tự động đóng chốt khóa cửa (Auto-Relock) sau khi hết 5 giây
+        // 3. TỰ ĐỘNG ĐÓNG CHỐT CỬA (AUTO-RELOCK) SAU 5 GIÂY MỞ
         bool triggerRelock = false;
         portENTER_CRITICAL(&gMux);
         if (g.autoRelockAtMs > 0 && now >= g.autoRelockAtMs) {
             g.autoRelockAtMs = 0;
+            g.autoDoorGuestActive = false;
             triggerRelock = true;
         }
         portEXIT_CRITICAL(&gMux);
 
         if (triggerRelock) {
             Serial.println("[ACTUATOR] Het 5 giay mo cua -> Tu dong dong chot khoa an toan (Auto-Relock)!");
-            setLockState(true); // Khóa chốt 90 độ qua Rơ-le
+            setLockState(true); // Khóa chốt 90 độ
         }
 
-        // 3. Đọc dữ liệu cảm biến
+        // 4. ĐỌC CẢM BIẾN SIÊU ÂM & CẢM BIẾN PIR
         const bool  pirVal     = (digitalRead(Config::PIN_PIR) == HIGH);
         const float distVal    = readDistanceCm();
         const bool  warmupDone = (now > Config::PIR_WARMUP_MS);
@@ -194,34 +235,72 @@ static void sensorTask(void* pvParameters) {
         g.pir = pirVal;
         g.distanceCm = distVal;
 
-        // Kiểm tra điều kiện kích hoạt báo động:
-        // Đang ARM, chưa ALARM, đã qua thời gian khởi động nhiệt PIR VÀ không trong thời gian hoãn Exit Delay
-        const bool exitDelayActive = (now < g.exitDelayUntilMs);
-        if (g.armed && !g.alarm && warmupDone && !exitDelayActive) {
-            if (pirVal) {
-                alertSource = "PIR";
-            } else if (distVal > 0.0f && distVal < (float)g.thresholdCm) {
-                alertSource = "SONAR";
-            }
+        // BỘ LỌC CHỐNG BÁO GIẢ KHOẢNG CÁCH 3CM (BỊ MÉP THÙNG CARTON CHẮN):
+        // HC-SR04 chỉ nhận diện người khi khoảng cách từ 5cm trở lên và <= ngưỡng (14cm)
+        // Khoảng cách < 5cm xem là mép vỏ hộp/nhiễu vật lý -> BỎ QUA để không bị hú còi oan!
+        const bool objectDetected = (distVal >= 5.0f && distVal <= (float)g.thresholdCm);
 
-            if (alertSource != nullptr) {
+        // ---------------------------------------------------------------------
+        // KỊCH BẢN 1: KHI TẮT BẢO VỆ (DISARM) -> CHẾ ĐỘ CỬA TỰ ĐỘNG ĐÓN KHÁCH
+        // Điều kiện: Khi có khách đến gần cửa (đáp ứng đồng thời PIR + Sonar)
+        // ---------------------------------------------------------------------
+        if (!g.armed) {
+            if (objectDetected && pirVal) {
+                // Khách đến gần: tự động mở cửa nếu cửa đang đóng!
+                if (g.doorLocked) {
+                    Serial.printf("[SMART-DOOR] Phat hien khach (PIR + Sonar %.1f cm) -> Tu dong mo cua!\n", distVal);
+                    portEXIT_CRITICAL(&gMux);
+                    setLockState(false); // Mở chốt cửa về 0 độ
+                    portENTER_CRITICAL(&gMux);
+                }
+                // Gia hạn thời gian mở cửa 5 giây tính từ lần phát hiện cuối
+                g.autoRelockAtMs = now + Config::AUTO_RELOCK_DELAY_MS;
+                g.autoDoorGuestActive = true;
+            }
+        } 
+        // ---------------------------------------------------------------------
+        // KỊCH BẢN 2: KHI BẬT BẢO VỆ (ARMED) -> BÁO ĐỘNG CHỐNG TRỘM
+        // QUY CHUẨN KÉP BẮT BUỘC: ĐỦ CẢ 2 CẢM BIẾN (PIR CÓ NGƯỜI VÀ SONAR ĐO TRONG VÙNG)
+        // ---------------------------------------------------------------------
+        else {
+            const bool exitDelayActive = (now < g.exitDelayUntilMs);
+            const bool intruderDetected = (pirVal && objectDetected); // BẮT BUỘC ĐỦ CẢ 2 ĐIỀU KIỆN!
+
+            if (!g.alarm && warmupDone && !exitDelayActive && intruderDetected) {
+                alertSource = "PIR+SONAR";
                 g.alarm = true;
                 g.alarmSinceMs = now;
+                lastIntruderSeenMs = now;
             }
-        }
 
-        // Tự động ngắt còi hú sau 60 giây nếu không có người tắt
-        if (g.alarm && (now - g.alarmSinceMs >= Config::ALARM_AUTO_SILENCE_MS)) {
-            g.alarm = false;
+            if (g.alarm) {
+                if (intruderDetected) {
+                    // Nếu vẫn còn trộm / bàn tay trong vùng tiếp cận: Cập nhật mốc thời gian
+                    lastIntruderSeenMs = now;
+                } else {
+                    // KHI ĐÃ RÚT TAY / NGƯỜI RỜI ĐI:
+                    // Sau 2 giây không còn người -> TỰ ĐỘNG NGẮT CÒI & HẾT BÁO ĐỘNG (Auto-Clear)!
+                    if (now - lastIntruderSeenMs >= 2000) {
+                        g.alarm = false;
+                        reportPending = true;
+                        Serial.println("[ALARM] Nguoi da roi khoi vung quet -> Tu dong tat bao dong (Auto-Clear)!");
+                    }
+                }
+
+                // Tối đa ngắt sau 10s nếu kẹt
+                if (now - g.alarmSinceMs >= Config::ALARM_AUTO_SILENCE_MS) {
+                    g.alarm = false;
+                }
+            }
         }
         portEXIT_CRITICAL(&gMux);
 
-        // Đẩy sự kiện đột nhập vào hàng đợi gửi tin lên Azure IoT Hub
+        // Đẩy sự kiện đột nhập vào hàng đợi gửi tin lên Cloud
         if (alertSource != nullptr) {
             AlertEvent ev{};
             strlcpy(ev.sensor, alertSource, sizeof(ev.sensor));
             ev.distanceCm = distVal;
-            xQueueSend(alertQueue, &ev, 0); // Non-blocking nếu queue đầy
+            xQueueSend(alertQueue, &ev, 0);
             Serial.printf("[ALERT] Phat hien dot nhap boi %s! Khoang cach: %.1f cm\n", alertSource, distVal);
         }
 
@@ -243,34 +322,41 @@ static void updateLcdDisplay(const SharedState& s) {
     char line2[17];
 
     if (s.alarm) {
-        // Màn hình khi có trộm: Nhấp nháy cảnh báo khẩn cấp
-        const bool blink = ((now / 300) % 2 == 0);
+        // Màn hình khi có trộm: Nhấp nháy cảnh báo khẩn cấp rõ ràng
+        const bool blink = ((now / 350) % 2 == 0);
         if (blink) {
             snprintf(line1, sizeof(line1), "!! CANH BAO !!  ");
-            snprintf(line2, sizeof(line2), "PHAT HIEN TROM! ");
+            snprintf(line2, sizeof(line2), "CO TROM TIEP CAN");
         } else {
-            snprintf(line1, sizeof(line1), ">> ALARM ACTIVE ");
-            if (s.pir) {
-                snprintf(line2, sizeof(line2), "NGUON: PIR CHUYEN");
+            snprintf(line1, sizeof(line1), ">> PHAT HIEN << ");
+            if (s.distanceCm >= 0.0f) {
+                snprintf(line2, sizeof(line2), "K/CACH: %2dcm PIR", (int)s.distanceCm);
             } else {
-                snprintf(line2, sizeof(line2), "NGUON: SONAR %dcm", (int)s.distanceCm);
+                snprintf(line2, sizeof(line2), "K/CACH: --cm PIR");
             }
         }
+    } else if (!s.armed && s.autoDoorGuestActive) {
+        // Màn hình khi cửa tự động mở đón khách
+        snprintf(line1, sizeof(line1), "CUA TU DONG MO  ");
+        snprintf(line2, sizeof(line2), "XIN CHAO KHACH! ");
     } else if (s.autoRelockAtMs > 0 && now < s.autoRelockAtMs) {
         // Màn hình khi người nhà ấn nút Exit Button mở cửa (Đếm ngược tự khóa)
         const int secLeft = (int)((s.autoRelockAtMs - now + 999) / 1000);
-        snprintf(line1, sizeof(line1), "MO CUA (THOAT)  ");
+        snprintf(line1, sizeof(line1), "MO CUA THOAT    ");
         snprintf(line2, sizeof(line2), "TU KHOA SAU: %ds ", secLeft);
     } else {
         // Dòng 1: Trạng thái hệ thống + Chốt khóa Servo
         if (s.armed) {
             snprintf(line1, sizeof(line1), "ARMED  |KHOA CUA");
         } else {
-            snprintf(line1, sizeof(line1), "DISARM | MO CUA ");
+            snprintf(line1, sizeof(line1), "DISARM |DONG CUA");
         }
 
         // Dòng 2: Chỉ số cảm biến (Khoảng cách + PIR)
-        if (s.distanceCm >= 0.0f) {
+        if (s.armed && s.pir) {
+            // Khi phát hiện có người từ xa (Demo cấp 1)
+            snprintf(line2, sizeof(line2), "D:%2dcm|CO NGUOI", (int)s.distanceCm);
+        } else if (s.distanceCm >= 0.0f) {
             snprintf(line2, sizeof(line2), "D:%3dcm|PIR:%s",
                      (int)s.distanceCm, s.pir ? "CO " : "KO ");
         } else {
@@ -288,183 +374,123 @@ static void updateLcdDisplay(const SharedState& s) {
 static void alarmOutputTask(void* pvParameters) {
     for (;;) {
         const SharedState s = snapshot();
+        const unsigned long now = millis();
 
-        // 1. Đèn trạng thái ARMED (LED Xanh)
-        digitalWrite(Config::PIN_LED_ARMED, s.armed ? HIGH : LOW);
+        // 1. ĐIỀU KHIỂN DÃY LED XANH (D33):
+        // Sáng LÊN KHI VÀ CHỈ KHI CỬA MỞ (khi ấn nút Exit mở cửa hoặc Cửa tự động mở đón khách)!
+        // Khi cửa đóng khóa lại: TẮT HẲN!
+        setLedArmedPin(!s.doorLocked);
 
-        // 2. Còi hú và Đèn cảnh báo (LED Vàng) chớp 2Hz khi ALARM
+        // 2. ĐIỀU KHIỂN DÃY LED ĐỎ (D32) & CÒI HÚ (D23) - 3 CẤP ĐỘ DEMO CHUẨN:
         if (s.alarm) {
-            const bool toggle = ((millis() / 250) % 2 == 0);
-            digitalWrite(Config::PIN_LED_ALARM, toggle ? HIGH : LOW);
-            digitalWrite(Config::PIN_BUZZER, toggle ? HIGH : LOW);
-        } else {
-            digitalWrite(Config::PIN_LED_ALARM, LOW);
+            // CẤP ĐỘ 2: TIẾP CẬN GẦN NGUY HIỂM -> LED ĐỎ NHẤP NHÁY 2Hz + CÒI BÍP BÍP DỒN DẬP!
+            const bool toggleLed = ((now / 250) % 2 == 0);
+            setLedAlarmPin(toggleLed);
+
+            // Còi thông minh nhịp đôi: BÍP 80ms - NGHỈ 100ms - BÍP 80ms - NGHỈ 740ms
+            if (ENABLE_BUZZER) {
+                const uint32_t cycleMs = now % 1000;
+                const bool beepNow = (cycleMs < 80) || (cycleMs >= 180 && cycleMs < 260);
+                digitalWrite(Config::PIN_BUZZER, beepNow ? HIGH : LOW);
+            } else {
+                digitalWrite(Config::PIN_BUZZER, LOW);
+            }
+        } 
+        else if (s.armed && s.pir) {
+            // CẤP ĐỘ 1: PHÁT HIỆN CÓ NGƯỜI TỪ XA (PIR BÁO) -> LED ĐỎ SÁNG ĐỨNG YÊN, CÒI IM LẶNG!
+            setLedAlarmPin(true);
+            digitalWrite(Config::PIN_BUZZER, LOW);
+        } 
+        else {
+            // TRẠNG THÁI BÌNH THƯỜNG: TẮT HẲN LED ĐỎ VÀ CÒI
+            setLedAlarmPin(false);
             digitalWrite(Config::PIN_BUZZER, LOW);
         }
 
         // 3. Cập nhật màn hình LCD 16x2
         updateLcdDisplay(s);
 
-        // BẮT BUỘC nhường CPU 20ms cho task khác và reset Watchdog Timer
+        // Nhường CPU 20ms
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 
 // ============================================================================
-// 5. CORE 0: MẠNG WI-FI, NTP, SAS TOKEN & AZURE IOT HUB MQTT (Priority 1)
+// 5. CORE 0: MẠNG WI-FI, FIREBASE REALTIME DATABASE (Priority 1)
 // ============================================================================
-static String urlEncode(const String& s) {
-    static const char* hex = "0123456789ABCDEF";
-    String out;
-    for (size_t i = 0; i < s.length(); i++) {
-        const char c = s[i];
-        if (isalnum((unsigned char)c) || c == '-' || c == '_' || c == '.' || c == '~') {
-            out += c;
-        } else {
-            out += '%';
-            out += hex[(c >> 4) & 0xF];
-            out += hex[c & 0xF];
-        }
-    }
-    return out;
-}
+static void sendFirebaseTelemetry(const SharedState& s, uint32_t now) {
+    if (WiFi.status() != WL_CONNECTED) return;
 
-// Sinh SAS Token chuẩn Azure IoT Hub bằng HMAC-SHA256 trên mbedtls
-static String generateSasToken(time_t expiry) {
-    const String resourceUri = urlEncode(String(IOTHUB_HOST) + "/devices/" + DEVICE_ID);
-    const String toSign = resourceUri + "\n" + String((long)expiry);
+    HTTPClient http;
+    const String url = String("https://") + FIREBASE_HOST + FB_PATH_TELEMETRY + "?auth=" + FIREBASE_AUTH;
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
 
-    unsigned char decodedKey[64];
-    size_t keyLen = 0;
-    if (mbedtls_base64_decode(decodedKey, sizeof(decodedKey), &keyLen,
-            (const unsigned char*)DEVICE_KEY, strlen(DEVICE_KEY)) != 0) {
-        return "";
-    }
-
-    unsigned char hmac[32];
-    mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), decodedKey, keyLen,
-                    (const unsigned char*)toSign.c_str(), toSign.length(), hmac);
-
-    unsigned char b64Hmac[64];
-    size_t b64Len = 0;
-    mbedtls_base64_encode(b64Hmac, sizeof(b64Hmac) - 1, &b64Len, hmac, sizeof(hmac));
-    b64Hmac[b64Len] = '\0';
-
-    return "SharedAccessSignature sr=" + resourceUri +
-           "&sig=" + urlEncode(String((char*)b64Hmac)) +
-           "&se=" + String((long)expiry);
-}
-
-// Báo cáo trạng thái reported twin lên Azure
-static void publishReportedTwin() {
-    const SharedState s = snapshot();
     JsonDocument doc;
-    doc["armed"]               = s.armed;
-    doc["doorLocked"]          = s.doorLocked;
-    doc["distanceThresholdCm"] = s.thresholdCm;
-    doc["fw"]                  = Config::FIRMWARE_VERSION;
+    doc["armed"]       = s.armed;
+    doc["doorLocked"]  = s.doorLocked;
+    doc["alarm"]       = s.alarm;
+    doc["pir"]         = s.pir;
+    doc["distanceCm"]  = (s.distanceCm < 0) ? -1.0f : roundf(s.distanceCm * 10) / 10.0f;
+    doc["thresholdCm"] = s.thresholdCm;
+    doc["rssi"]        = WiFi.RSSI();
+    doc["uptimeS"]     = now / 1000;
+    doc["ts"]          = getEpochMs();
 
     String body;
     serializeJson(doc, body);
-
-    static uint32_t rid = 0;
-    const String topic = "$iothub/twin/PATCH/properties/reported/?$rid=" + String(++rid);
-    if (mqtt.publish(topic.c_str(), body.c_str())) {
-        reportPending = false;
-        Serial.println("[AZURE-CORE0] Cap nhat Reported Twin thanh cong");
-    }
+    http.PUT(body);
+    http.end();
 }
 
-// Xử lý gói tin MQTT nhận từ Azure IoT Hub (Direct Method & Twin)
-static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
-    const String t(topic);
+static void pollFirebaseControl() {
+    if (WiFi.status() != WL_CONNECTED) return;
 
-    // 1. Nhận Direct Method: $iothub/methods/POST/{method}/?$rid={rid}
-    if (t.startsWith("$iothub/methods/POST/")) {
-        const int nameStart = 21;
-        const String method = t.substring(nameStart, t.indexOf('/', nameStart));
-        const String rid    = t.substring(t.indexOf("$rid=") + 5);
+    HTTPClient http;
+    const String url = String("https://") + FIREBASE_HOST + FB_PATH_CONTROL + "?auth=" + FIREBASE_AUTH;
+    http.begin(url);
+    int httpCode = http.GET();
 
-        JsonDocument req;
-        deserializeJson(req, payload, length);
-
-        JsonDocument res;
-        int status = 200;
-
-        if (method == "setArm") {
-            const bool armValue = req["value"] | false;
-            setArmed(armValue);
-            res["armed"]      = armValue;
-            res["doorLocked"] = armValue;
-        } else if (method == "setLock") {
-            const bool lockValue = req["value"] | false;
-            setLockState(lockValue);
-            res["doorLocked"] = lockValue;
-        } else if (method == "silenceAlarm") {
-            silenceAlarm();
-            res["alarm"] = false;
-        } else {
-            status = 404;
-            res["error"] = "Method khong ton tai";
-        }
-
-        String body;
-        serializeJson(res, body);
-
-        const String responseTopic = "$iothub/methods/res/" + String(status) + "/?$rid=" + rid;
-        mqtt.publish(responseTopic.c_str(), body.c_str());
-        Serial.printf("[AZURE-CORE0] Direct Method '%s' tra ve status: %d\n", method.c_str(), status);
-        return;
-    }
-
-    // 2. Nhận cấu hình Twin Desired từ Cloud
-    if (t.startsWith("$iothub/twin/PATCH/properties/desired/")) {
-        JsonDocument d;
-        if (!deserializeJson(d, payload, length) && d["distanceThresholdCm"].is<int>()) {
-            setThreshold(d["distanceThresholdCm"].as<int>());
+    if (httpCode == 200) {
+        String payload = http.getString();
+        if (payload != "null" && payload.length() > 5) {
+            JsonDocument doc;
+            DeserializationError err = deserializeJson(doc, payload);
+            if (!err) {
+                // Nhận lệnh tắt còi từ Web
+                if (doc["silenceAlarm"] == true) {
+                    silenceAlarm();
+                    HTTPClient resetHttp;
+                    String patchUrl = String("https://") + FIREBASE_HOST + FB_PATH_CONTROL + "?auth=" + FIREBASE_AUTH;
+                    resetHttp.begin(patchUrl);
+                    resetHttp.PATCH("{\"silenceAlarm\":false}");
+                    resetHttp.end();
+                }
+            }
         }
     }
+    http.end();
 }
 
-// Kết nối MQTT TLS 8883 vào Azure IoT Hub
-static bool connectIoTHub() {
-    const String username = String(IOTHUB_HOST) + "/" + DEVICE_ID + "/?api-version=2021-04-12";
-    sasExpiry = time(nullptr) + Config::SAS_TTL_S;
-    const String password = generateSasToken(sasExpiry);
+static void sendFirebaseAlert(const AlertEvent& ev) {
+    if (WiFi.status() != WL_CONNECTED) return;
 
-    if (password.isEmpty()) {
-        Serial.println("[AZURE-CORE0] LOI: DEVICE_KEY khong dung dinh dang Base64");
-        return false;
-    }
+    HTTPClient http;
+    const String url = String("https://") + FIREBASE_HOST + FB_PATH_ALERTS + "?auth=" + FIREBASE_AUTH;
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
 
-    Serial.print("[AZURE-CORE0] Dang ket noi Azure IoT Hub (Port 8883)... ");
-    if (!mqtt.connect(DEVICE_ID, username.c_str(), password.c_str())) {
-        Serial.printf("THAT BAI (State: %d)\n", mqtt.state());
-        return false;
-    }
-
-    Serial.println("THANH CONG!");
-    mqtt.subscribe("$iothub/methods/POST/#");
-    mqtt.subscribe("$iothub/twin/PATCH/properties/desired/#");
-    mqtt.subscribe("$iothub/twin/res/#");
-
-    reportPending = true;
-    return true;
-}
-
-// Gửi tin D2C (Telemetry / Alert)
-static void publishD2C(const char* type, JsonDocument& doc) {
-    doc["deviceId"] = DEVICE_ID;
-    doc["type"]     = type;
-    doc["ts"]       = getEpochMs();
+    JsonDocument doc;
+    doc["timestamp"]  = getEpochMs();
+    doc["type"]       = "INTRUSION_DETECTED";
+    doc["sensor"]     = ev.sensor;
+    doc["distanceCm"] = ev.distanceCm;
+    doc["message"]    = String("Phat hien dot nhap boi ") + ev.sensor;
 
     String body;
     serializeJson(doc, body);
-
-    const String topic = String("devices/") + DEVICE_ID +
-                         "/messages/events/type=" + type +
-                         "&$.ct=application%2Fjson&$.ce=utf-8";
-    mqtt.publish(topic.c_str(), body.c_str());
+    http.POST(body);
+    http.end();
 }
 
 static void networkTask(void* pvParameters) {
@@ -472,18 +498,12 @@ static void networkTask(void* pvParameters) {
     WiFi.setAutoReconnect(true);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
 
-    tlsClient.setInsecure(); // Tiết kiệm RAM cho môi trường học tập
-    mqtt.setServer(IOTHUB_HOST, 8883);
-    mqtt.setBufferSize(1024);
-    mqtt.setKeepAlive(60);
-    mqtt.setCallback(onMqttMessage);
-
-    // Đồng bộ NTP múi giờ GMT+7 (Việt Nam)
+    tlsClient.setInsecure(); // Tiết kiệm RAM
     configTime(7 * 3600, 0, "pool.ntp.org", "time.google.com");
 
-    uint32_t lastWifiRetry  = 0;
-    uint32_t lastMqttRetry  = 0;
-    uint32_t lastTelemetry  = 0;
+    uint32_t lastWifiRetry      = 0;
+    uint32_t lastFbTelemetry    = 0;
+    uint32_t lastFbPollControl  = 0;
 
     for (;;) {
         const uint32_t now = millis();
@@ -492,75 +512,34 @@ static void networkTask(void* pvParameters) {
         if (WiFi.status() != WL_CONNECTED) {
             if (now - lastWifiRetry >= Config::WIFI_RETRY_MS) {
                 lastWifiRetry = now;
-                Serial.println("[AZURE-CORE0] Dang thu ket noi lai Wi-Fi...");
+                Serial.println("[WIFI-CORE0] Dang thu ket noi lai Wi-Fi...");
                 WiFi.reconnect();
             }
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
 
-        // 2. Đợi NTP có giờ hợp lệ trước khi sinh SAS Token
-        if (getEpochMs() == 0) {
-            vTaskDelay(pdMS_TO_TICKS(200));
-            continue;
-        }
-
-        // 3. Tự động ngắt kết nối để gia hạn SAS Token trước 5 phút
-        if (mqtt.connected() && time(nullptr) > sasExpiry - 300) {
-            Serial.println("[AZURE-CORE0] SAS Token sap het han, ngat ket noi de tao token moi...");
-            mqtt.disconnect();
-        }
-
-        // 4. Kết nối lại MQTT nếu bị rớt
-        if (!mqtt.connected()) {
-            if (now - lastMqttRetry >= Config::MQTT_RETRY_MS) {
-                lastMqttRetry = now;
-                connectIoTHub();
-            }
-            vTaskDelay(pdMS_TO_TICKS(100));
-            continue;
-        }
-
-        mqtt.loop();
-
-        // 5. Gửi sự kiện cảnh báo khẩn cấp từ Core 1 ngay lập tức
+        // 2. Gửi sự kiện cảnh báo khẩn cấp từ Core 1 lên Firebase ngay lập tức
         AlertEvent ev;
         while (xQueueReceive(alertQueue, &ev, 0) == pdTRUE) {
-            JsonDocument doc;
-            doc["event"]      = "INTRUSION_DETECTED";
-            doc["sensor"]     = ev.sensor;
-            doc["distanceCm"] = ev.distanceCm;
-            publishD2C("alert", doc);
-            reportPending = true;
-            Serial.printf("[AZURE-CORE0] Da gui canh bao dot nhap [%s] len IoT Hub\n", ev.sensor);
+            sendFirebaseAlert(ev);
+            Serial.printf("[FIREBASE-CORE0] Da gui canh bao dot nhap [%s] len Cloud Realtime!\n", ev.sensor);
         }
 
-        // 6. Định kỳ gửi Telemetry (15 giây) để vẽ biểu đồ Web
-        if (now - lastTelemetry >= Config::TELEMETRY_INTERVAL_MS) {
-            lastTelemetry = now;
+        // 3. Đẩy Telemetry lên Firebase Realtime Database mỗi 1 giây (Hot Path <50ms)
+        if (now - lastFbTelemetry >= Config::FB_STREAM_INTERVAL_MS) {
+            lastFbTelemetry = now;
             const SharedState s = snapshot();
-
-            JsonDocument doc;
-            doc["armed"]       = s.armed;
-            doc["doorLocked"]  = s.doorLocked;
-            doc["alarm"]       = s.alarm;
-            doc["pir"]         = s.pir;
-            doc["distanceCm"]  = (s.distanceCm < 0) ? -1.0f : roundf(s.distanceCm * 10) / 10.0f;
-            doc["thresholdCm"] = s.thresholdCm;
-            doc["rssi"]        = WiFi.RSSI();
-            doc["uptimeS"]     = now / 1000;
-
-            publishD2C("telemetry", doc);
-            Serial.printf("[AZURE-CORE0] Telemetry -> Sonar: %.1f cm, PIR: %d, ARM: %d, Lock: %d\n",
-                          doc["distanceCm"].as<float>(), s.pir, s.armed, s.doorLocked);
+            sendFirebaseTelemetry(s, now);
         }
 
-        // 7. Gửi cập nhật Reported Twin khi có thay đổi trạng thái
-        if (reportPending) {
-            publishReportedTwin();
+        // 4. Đọc lệnh điều khiển từ Web qua Firebase mỗi 500ms
+        if (now - lastFbPollControl >= Config::FB_POLL_CONTROL_MS) {
+            lastFbPollControl = now;
+            pollFirebaseControl();
         }
 
-        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 
@@ -569,12 +548,13 @@ static void networkTask(void* pvParameters) {
 // ============================================================================
 void setup() {
     Serial.begin(115200);
+    delay(500);
+
     Serial.println("\n=======================================================");
-    Serial.println("  HE THONG CANH BAO CHONG TROM IOT (ESP32 - AZURE)");
-    Serial.printf("  Firmware: v%s | Power-Gating Relay + Servo + LCD\n", Config::FIRMWARE_VERSION);
+    Serial.println("  HE THONG IOT CANH BAO CHONG TROM & CUA TU DONG v2.4");
     Serial.println("=======================================================");
 
-    // Khởi tạo các chân GPIO cảm biến, còi, nút nhấn và Relay
+    // Khởi tạo các chân GPIO cảm biến, còi, nút nhấn, công tắc và Relay
     pinMode(Config::PIN_PIR, INPUT);
     pinMode(Config::PIN_US_TRIG, OUTPUT);
     pinMode(Config::PIN_US_ECHO, INPUT);
@@ -582,13 +562,15 @@ void setup() {
     pinMode(Config::PIN_LED_ALARM, OUTPUT);
     pinMode(Config::PIN_LED_ARMED, OUTPUT);
     pinMode(Config::PIN_RELAY_SERVO, OUTPUT);
-    pinMode(Config::PIN_BUTTON_EXIT, INPUT_PULLUP); // Nút nhấn Exit Button mở cửa (trở kéo lên nội bộ)
+    pinMode(Config::PIN_BUTTON_EXIT, INPUT_PULLUP);
+    pinMode(Config::PIN_SWITCH_ARM, INPUT_PULLUP); // Công tắc gạt 3 chân
 
     digitalWrite(Config::PIN_US_TRIG, LOW);
     digitalWrite(Config::PIN_BUZZER, LOW);
-    digitalWrite(Config::PIN_LED_ALARM, LOW);
-    digitalWrite(Config::PIN_LED_ARMED, LOW);
-    // Ban đầu ngắt Relay để bảo vệ nguồn Servo
+    // Khởi tạo LED tắt hẳn theo cực tính A1015
+    setLedAlarmPin(false);
+    setLedArmedPin(false);
+    // Ngắt Rơ-le để bảo vệ nguồn Servo
     digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_OFF);
 
     // Khởi tạo giao tiếp I2C và Màn hình LCD 16x2
@@ -598,40 +580,68 @@ void setup() {
     lcd.setCursor(0, 0);
     lcd.print("  HE THONG IOT  ");
     lcd.setCursor(0, 1);
-    lcd.print(" CHONG TROM v2.3");
+    lcd.print(" CHONG TROM v2.4");
 
     // Khởi tạo Động cơ Servo SG90 (chốt cửa)
     ESP32PWM::allocateTimer(0);
     ESP32PWM::allocateTimer(1);
     ESP32PWM::allocateTimer(2);
     ESP32PWM::allocateTimer(3);
-    servoLock.setPeriodHertz(50); // Tiêu chuẩn 50Hz cho Servo SG90
-    servoLock.attach(Config::PIN_SERVO, 500, 2400);
+    servoLock.setPeriodHertz(50);
+    pinMode(Config::PIN_SERVO, OUTPUT);
+    digitalWrite(Config::PIN_SERVO, LOW);
 
-    // Đọc trạng thái lưu trữ NVS
+    // Đọc trạng thái từ Flash NVS
     prefs.begin("chongtrom", false);
-    g.armed       = prefs.getBool("armed", false);
-    g.doorLocked  = g.armed; // Mặc định khóa nếu đang armed
-    g.thresholdCm = prefs.getUShort("thr", Config::DEFAULT_DISTANCE_THRESHOLD_CM);
+    g.thresholdCm = prefs.getUShort("thr", 12); // Mặc định 12cm cho mô hình thùng bia
+    if (g.thresholdCm > 12) {
+        g.thresholdCm = 12; // Cố định 12cm để tránh mặt bàn 14cm kích hoạt báo động giả
+        prefs.putUShort("thr", 12);
+    }
 
-    // Đặt vị trí ban đầu của Servo chốt cửa qua Relay Power-Gating
+    // ĐỌC VỊ TRÍ CÔNG TẮC GẠT D26 LÚC BOOT:
+    // Chân D26 gạt sang GND (LOW) = ARMED (Bật bảo vệ)
+    // Chân D26 hở (HIGH) = DISARM (Cửa tự động đón khách)
+    const bool switchBoot = (digitalRead(Config::PIN_SWITCH_ARM) == LOW);
+    g.armed = switchBoot;
+    g.doorLocked = true; // Luôn đóng chốt ban đầu
+
+    // Đặt vị trí ban đầu & Self-Test Servo: Quay 0 độ (Mở) -> 90 độ (Đóng)
+    // Kỹ thuật Power-Gating triệt để: Kích rơ-le -> Gắn PWM -> Quay -> Detach -> Ngắt rơ-le
     digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_ON);
-    delay(50);
-    servoLock.write(g.doorLocked ? Config::SERVO_LOCK_ANGLE : Config::SERVO_UNLOCK_ANGLE);
+    delay(80);
+    servoLock.attach(Config::PIN_SERVO, Config::SERVO_MIN_US, Config::SERVO_MAX_US);
+    servoLock.write(Config::SERVO_UNLOCK_ANGLE); // Quay về 0 độ
+    delay(500);
+    servoLock.write(Config::SERVO_LOCK_ANGLE);   // Quay về 90 độ (khóa lại)
     delay(Config::SERVO_MOVE_TIME_MS);
+    servoLock.detach();
+    pinMode(Config::PIN_SERVO, OUTPUT);
+    digitalWrite(Config::PIN_SERVO, LOW);
     digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_OFF);
 
-    delay(800); // Giữ màn hình khởi động
+    // Boot Self-Test: Chớp LED và bíp còi 1 tiếng ngắn 60ms rất êm
+    setLedArmedPin(true);
+    setLedAlarmPin(true);
+    if (ENABLE_BUZZER) {
+        digitalWrite(Config::PIN_BUZZER, HIGH);
+        delay(60);
+        digitalWrite(Config::PIN_BUZZER, LOW);
+    }
+    setLedArmedPin(false);
+    setLedAlarmPin(false);
+
+    delay(600);
     lcd.clear();
 
-    // Khởi tạo hàng đợi cảnh báo FreeRTOS (tối đa 8 sự kiện)
+    // Khởi tạo hàng đợi cảnh báo FreeRTOS (8 sự kiện)
     alertQueue = xQueueCreate(8, sizeof(AlertEvent));
 
     // Khởi tạo và ghim các Task vào 2 nhân độc lập:
-    // Core 0: Mạng & Azure IoT Hub (Priority 1)
-    xTaskCreatePinnedToCore(networkTask, "azureNetworkTask", 10240, nullptr, 1, nullptr, 0);
+    // Core 0: Mạng & Firebase Cloud Realtime Stream (Priority 1)
+    xTaskCreatePinnedToCore(networkTask, "firebaseNetTask", 10240, nullptr, 1, nullptr, 0);
 
-    // Core 1: Đọc cảm biến non-blocking (Priority 2)
+    // Core 1: Đọc cảm biến non-blocking & Cửa tự động (Priority 2)
     xTaskCreatePinnedToCore(sensorTask, "sensorTask", 4096, nullptr, 2, nullptr, 1);
 
     // Core 1: Phát còi, LED cảnh báo & Màn hình LCD (Priority 3 - Ưu tiên cao nhất)
@@ -639,6 +649,5 @@ void setup() {
 }
 
 void loop() {
-    // Xóa task loop mặc định để giải phóng RAM vì toàn bộ logic đã chạy trong 3 FreeRTOS tasks
     vTaskDelete(nullptr);
 }

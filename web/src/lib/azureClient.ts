@@ -14,6 +14,7 @@ export class AzureClient {
   private listeners: PubSubListeners = {};
   private reconnectTimer: number | null = null;
   private reconnectAttempts = 0;
+  private maxReconnectAttempts = 2; // Giới hạn số lần thử lại để tránh spam khi chạy local dev
   private isExplicitlyClosed = false;
 
   constructor(listeners: PubSubListeners = {}) {
@@ -89,12 +90,16 @@ export class AzureClient {
   }
 
   private scheduleReconnect(): void {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      // Đã vượt quá số lần thử - ngưng thử lại để nhường cho Firebase Realtime Database
+      this.updateStatus("DISCONNECTED");
+      return;
+    }
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 15000);
     this.reconnectAttempts++;
 
     this.reconnectTimer = window.setTimeout(() => {
-      console.log(`[Azure WebPubSub] Đang thử kết nối lại (lần ${this.reconnectAttempts})...`);
       this.connect();
     }, delay);
   }
