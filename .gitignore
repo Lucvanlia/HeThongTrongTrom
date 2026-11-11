@@ -36,3 +36,13 @@ graphify-out/cache/
 # OS & Temp
 .DS_Store
 Thumbs.db
+
+# AI Agent Skills, Rules & Local Planning (Giu tren may cuc bo, khong dua len GitHub)
+.agents/
+graphify-out/
+task_plan.md
+findings.md
+progress.md
+GEMINI.md
+RULE_PURE_AZURE_IOT.md
+BANG_TONG_HOP_DON_HANG.md

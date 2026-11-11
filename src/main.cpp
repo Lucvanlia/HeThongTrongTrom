@@ -26,7 +26,7 @@ struct SharedState {
     float    distanceCm = -1.0f;
     uint32_t alarmSinceMs = 0;
     uint16_t thresholdCm = 12;         // Ngưỡng tiếp cận gần (12cm: <12cm là tay/người, 14cm là mặt bàn trống)
-    uint32_t autoRelockAtMs = 0;       // Hẹn giờ tự động đóng chốt lại sau 5s
+    uint32_t autoRelockAtMs = 0;       // Hẹn giờ tự động đóng chốt lại sau 2s
     uint32_t exitDelayUntilMs = 0;     // Hoãn báo động 10s khi người nhà ấn nút đi ra
     bool     autoDoorGuestActive = false; // Cờ báo cửa đang mở đón khách
 };
@@ -94,19 +94,19 @@ static void setLockState(bool locked) {
     // KỸ THUẬT POWER-GATING TRIỆT ĐỂ (CHỐNG RUNG GIẬT, CHỐNG DÒNG RÒ KÝ SINH):
     // 1. Kích Rơ-le ĐÓNG cấp điện 5V cho Servo
     digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_ON);
-    vTaskDelay(pdMS_TO_TICKS(80)); // Chờ điện áp 5V ổn định hoàn toàn
+    vTaskDelay(pdMS_TO_TICKS(50)); // Chờ điện áp 5V ổn định nhanh (50ms)
 
     // 2. Gắn chân PWM và phát xung điều khiển góc quay (600µs - 2400µs an toàn)
     servoLock.attach(Config::PIN_SERVO, Config::SERVO_MIN_US, Config::SERVO_MAX_US);
     servoLock.write(locked ? Config::SERVO_LOCK_ANGLE : Config::SERVO_UNLOCK_ANGLE);
-    vTaskDelay(pdMS_TO_TICKS(Config::SERVO_MOVE_TIME_MS)); // Chờ servo quay xong (600ms)
+    vTaskDelay(pdMS_TO_TICKS(Config::SERVO_MOVE_TIME_MS)); // Chờ servo quay dứt khoát (450ms)
 
     // 3. NGẮT XUNG PWM (DETACH) VÀ KÉO CHÂN TÍN HIỆU VỀ 0V
     // Triệt tiêu 100% dòng rò ký sinh qua diode ESD của servo (chống rung giật tại chỗ)
     servoLock.detach();
     pinMode(Config::PIN_SERVO, OUTPUT);
     digitalWrite(Config::PIN_SERVO, LOW);
-    vTaskDelay(pdMS_TO_TICKS(30));
+    vTaskDelay(pdMS_TO_TICKS(20));
 
     // 4. Kích Rơ-le NGẮT điện 5V cách ly hoàn toàn
     digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_OFF);
@@ -199,10 +199,10 @@ static void sensorTask(void* pvParameters) {
             if (curBtn == LOW) {
                 Serial.println("[BUTTON D27] Nguoi nha an nut Exit -> Mo chot cua & Tat bao dong!");
                 silenceAlarm();      // Tắt còi ngay lập tức nếu đang hú
-                setLockState(false); // Mở chốt cửa về 0 độ
+                setLockState(false); // Mở toang chốt cửa 160 độ
 
                 portENTER_CRITICAL(&gMux);
-                g.autoRelockAtMs = now + Config::AUTO_RELOCK_DELAY_MS; // Tự động khóa lại sau 5s
+                g.autoRelockAtMs = now + Config::AUTO_RELOCK_DELAY_MS; // Tự động khóa lại sau 2s
                 if (g.armed) {
                     g.exitDelayUntilMs = now + Config::EXIT_DELAY_MS; // Hoãn báo động 10s để bước ra
                 }
@@ -210,7 +210,7 @@ static void sensorTask(void* pvParameters) {
             }
         }
 
-        // 3. TỰ ĐỘNG ĐÓNG CHỐT CỬA (AUTO-RELOCK) SAU 5 GIÂY MỞ
+        // 3. TỰ ĐỘNG ĐÓNG CHỐT CỬA (AUTO-RELOCK) SAU 2 GIÂY MỞ
         bool triggerRelock = false;
         portENTER_CRITICAL(&gMux);
         if (g.autoRelockAtMs > 0 && now >= g.autoRelockAtMs) {
@@ -221,8 +221,8 @@ static void sensorTask(void* pvParameters) {
         portEXIT_CRITICAL(&gMux);
 
         if (triggerRelock) {
-            Serial.println("[ACTUATOR] Het 5 giay mo cua -> Tu dong dong chot khoa an toan (Auto-Relock)!");
-            setLockState(true); // Khóa chốt 90 độ
+            Serial.println("[ACTUATOR] Het 2 giay mo cua -> Tu dong dong chot khoa an toan (Auto-Relock)!");
+            setLockState(true); // Khóa chốt an toàn 0 độ
         }
 
         // 4. ĐỌC CẢM BIẾN SIÊU ÂM & CẢM BIẾN PIR
@@ -236,7 +236,7 @@ static void sensorTask(void* pvParameters) {
         g.distanceCm = distVal;
 
         // BỘ LỌC CHỐNG BÁO GIẢ KHOẢNG CÁCH 3CM (BỊ MÉP THÙNG CARTON CHẮN):
-        // HC-SR04 chỉ nhận diện người khi khoảng cách từ 5cm trở lên và <= ngưỡng (14cm)
+        // HC-SR04 chỉ nhận diện người khi khoảng cách từ 5cm trở lên và <= ngưỡng (12cm)
         // Khoảng cách < 5cm xem là mép vỏ hộp/nhiễu vật lý -> BỎ QUA để không bị hú còi oan!
         const bool objectDetected = (distVal >= 5.0f && distVal <= (float)g.thresholdCm);
 
@@ -250,10 +250,10 @@ static void sensorTask(void* pvParameters) {
                 if (g.doorLocked) {
                     Serial.printf("[SMART-DOOR] Phat hien khach (PIR + Sonar %.1f cm) -> Tu dong mo cua!\n", distVal);
                     portEXIT_CRITICAL(&gMux);
-                    setLockState(false); // Mở chốt cửa về 0 độ
+                    setLockState(false); // Mở chốt cửa 160 độ
                     portENTER_CRITICAL(&gMux);
                 }
-                // Gia hạn thời gian mở cửa 5 giây tính từ lần phát hiện cuối
+                // Gia hạn thời gian mở cửa 2 giây tính từ lần phát hiện cuối
                 g.autoRelockAtMs = now + Config::AUTO_RELOCK_DELAY_MS;
                 g.autoDoorGuestActive = true;
             }
@@ -606,14 +606,14 @@ void setup() {
     g.armed = switchBoot;
     g.doorLocked = true; // Luôn đóng chốt ban đầu
 
-    // Đặt vị trí ban đầu & Self-Test Servo: Quay 0 độ (Mở) -> 90 độ (Đóng)
+    // Đặt vị trí ban đầu & Self-Test Servo: Quay 160 độ (Mở) -> 0 độ (Khóa)
     // Kỹ thuật Power-Gating triệt để: Kích rơ-le -> Gắn PWM -> Quay -> Detach -> Ngắt rơ-le
     digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_ON);
-    delay(80);
+    delay(50);
     servoLock.attach(Config::PIN_SERVO, Config::SERVO_MIN_US, Config::SERVO_MAX_US);
-    servoLock.write(Config::SERVO_UNLOCK_ANGLE); // Quay về 0 độ
-    delay(500);
-    servoLock.write(Config::SERVO_LOCK_ANGLE);   // Quay về 90 độ (khóa lại)
+    servoLock.write(Config::SERVO_UNLOCK_ANGLE); // Quay về 160 độ (Mở)
+    delay(450);
+    servoLock.write(Config::SERVO_LOCK_ANGLE);   // Quay về 0 độ (Khóa lại)
     delay(Config::SERVO_MOVE_TIME_MS);
     servoLock.detach();
     pinMode(Config::PIN_SERVO, OUTPUT);
