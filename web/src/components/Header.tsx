@@ -1,16 +1,26 @@
 import React from "react";
-import { Shield, ShieldAlert, Wifi, WifiOff, LogIn, LogOut, User, Server } from "lucide-react";
-import { ConnectionStatus } from "../lib/azureClient";
-import { UserPrincipal } from "../types";
+import { Shield, ShieldAlert, Wifi, WifiOff, LogIn, LogOut, User, Activity } from "lucide-react";
+import { ConnectionStatus } from "../types";
 
 interface HeaderProps {
   wsStatus: ConnectionStatus;
   deviceOnline: boolean;
-  user: UserPrincipal | null;
+  userEmail: string | null;
   hasAlarm: boolean;
+  secondsSinceLastHeartbeat: number | null;
+  onOpenLogin: () => void;
+  onLogout: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ wsStatus, deviceOnline, user, hasAlarm }) => {
+export const Header: React.FC<HeaderProps> = ({
+  wsStatus,
+  deviceOnline,
+  userEmail,
+  hasAlarm,
+  secondsSinceLastHeartbeat,
+  onOpenLogin,
+  onLogout
+}) => {
   return (
     <header className="glass-panel" style={{ padding: "16px 24px", marginBottom: "24px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
@@ -44,21 +54,25 @@ export const Header: React.FC<HeaderProps> = ({ wsStatus, deviceOnline, user, ha
                 HỆ THỐNG AN NINH & BÁO ĐỘNG ĐỘT NHẬP
               </h1>
               <span className="badge badge-cyan" style={{ fontSize: "0.65rem" }}>
-                HYBRID CLOUD
+                CLOUD REALTIME
               </span>
             </div>
             <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "2px" }}>
-              Dual-Core ESP32 • Firebase Realtime (&lt;50ms) • Microsoft Azure Cold Storage &amp; Logic Apps
+              Dual-Core ESP32 • Firebase Realtime Database • Smart Servo Lock
             </p>
           </div>
         </div>
 
         {/* Status Indicators & Auth */}
         <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
-          {/* WebSocket Status */}
+          {/* Live Status Badge */}
           <div className={`badge ${wsStatus === "CONNECTED" ? "badge-green" : wsStatus === "CONNECTING" ? "badge-amber" : "badge-red"}`}>
-            <Server size={14} />
-            <span>Firebase: {wsStatus === "CONNECTED" ? "REALTIME (<50ms)" : wsStatus}</span>
+            <Activity size={14} />
+            <span>
+              {wsStatus === "CONNECTED" 
+                ? (secondsSinceLastHeartbeat !== null ? `LIVE (${secondsSinceLastHeartbeat}s trước)` : "LIVE") 
+                : wsStatus}
+            </span>
           </div>
 
           {/* Device Online/Offline Status */}
@@ -67,26 +81,26 @@ export const Header: React.FC<HeaderProps> = ({ wsStatus, deviceOnline, user, ha
             <span>ESP32: {deviceOnline ? "ONLINE" : "OFFLINE"}</span>
           </div>
 
-          {/* User Profile / Easy Auth */}
-          {user ? (
+          {/* User Profile / Auth State */}
+          {userEmail ? (
             <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingLeft: "8px", borderLeft: "1px solid var(--border-color)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                 <User size={16} color="var(--cyan-accent)" />
-                <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>{user.userDetails}</span>
+                <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>{userEmail}</span>
                 <span className="badge badge-cyan" style={{ fontSize: "0.65rem", padding: "2px 6px" }}>
-                  {user.userRoles.find(r => r === "admin" || r === "operator") || "viewer"}
+                  ADMIN
                 </span>
               </div>
-              <a href="/.auth/logout" className="btn btn-outline" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+              <button onClick={onLogout} className="btn btn-outline" style={{ padding: "6px 12px", fontSize: "0.75rem" }} title="Đăng xuất">
                 <LogOut size={14} />
                 <span>Đăng xuất</span>
-              </a>
+              </button>
             </div>
           ) : (
-            <a href="/.auth/login/github" className="btn btn-primary" style={{ padding: "8px 16px", fontSize: "0.8rem" }}>
+            <button onClick={onOpenLogin} className="btn btn-primary" style={{ padding: "8px 16px", fontSize: "0.8rem" }}>
               <LogIn size={15} />
-              <span>Đăng nhập GitHub</span>
-            </a>
+              <span>Đăng nhập Admin</span>
+            </button>
           )}
         </div>
 

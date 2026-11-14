@@ -1,85 +1,68 @@
+/**
+ * @file test_servo.cpp
+ * @brief Chương trình kiểm tra toàn diện động cơ Servo SG90 (Test độc lập 100%)
+ * 
+ * Hỗ trợ cả 2 cách đấu nối:
+ * - Cách 1: Nối trực tiếp Servo vào 5V/GND/D19 (Không qua Rơ-le)
+ * - Cách 2: Nối Servo qua Module Rơ-le 5V (D25) để ngắt nguồn chống giật
+ */
+
 #include <Arduino.h>
 #include <ESP32Servo.h>
 
-// ==============================================================================
-// TEST SERVO SG90 CHỐNG RUNG GIẬT 100% (0 ĐỘ <-> 90 ĐỘ)
-// ==============================================================================
-
 #define PIN_SERVO       19   // Dây Cam (PWM tín hiệu) của Servo cắm chân D19
-#define PIN_RELAY_SERVO 25   // Chân IN của module Rơ-le 5V cắm chân D25
+#define PIN_RELAY_SERVO 25   // Chân IN của module Rơ-le 5V cắm chân D25 (nếu có dùng Rơ-le)
 
-// Logic Rơ-le 5V: LOW = BẬT cấp nguồn 5V cho Servo
+// Logic Rơ-le 5V: LOW = BẬT tiếp điểm (Active-LOW)
 #define RELAY_ON  LOW
 #define RELAY_OFF HIGH
 
-// Góc xoay chuẩn của cơ cấu chốt cửa (0 độ đóng <-> 160 độ mở toang dứt khoát):
-#define ANGLE_LOCK   0    // 0 độ: Đóng chốt khóa an toàn
-#define ANGLE_UNLOCK 160  // 160 độ: Mở toang chốt cửa dứt khoát
-
-// Giới hạn xung an toàn cho SG90 (600µs tránh cấn ngàm cơ khí bên trong):
-#define SERVO_MIN_US 600
-#define SERVO_MAX_US 2400
-
-static Servo servoLock;
-
-// Hàm quay mượt mà, chống rung giật & chống nóng 100%:
-static void moveToAngle(int angle) {
-    // 1. Kích Rơ-le ĐÓNG cấp điện 5V
-    digitalWrite(PIN_RELAY_SERVO, RELAY_ON);
-    delay(50); // Chờ điện áp 5V ổn định
-
-    // 2. Gắn chân PWM và phát xung điều khiển góc
-    servoLock.attach(PIN_SERVO, SERVO_MIN_US, SERVO_MAX_US);
-    servoLock.write(angle);
-    delay(450); // Chờ servo quay dứt khoát tới đích (450ms)
-
-    // 3. TẮT XUNG PWM (DETACH) VÀ KÉO CHÂN TÍN HIỆU VỀ LOW
-    // Đây là bí quyết: Ngắt xung PWM khi servo đã tới góc để servo nghỉ hoàn toàn!
-    servoLock.detach();
-    pinMode(PIN_SERVO, OUTPUT);
-    digitalWrite(PIN_SERVO, LOW);
-    delay(20);
-
-    // 4. Ngắt Rơ-le cách ly nguồn (Power-Gating triệt để)
-    digitalWrite(PIN_RELAY_SERVO, RELAY_OFF);
-}
+static Servo myServo;
 
 void setup() {
     Serial.begin(115200);
-    delay(500);
+    delay(1000);
 
     Serial.println("\n=======================================================");
-    Serial.println("  TEST SERVO SG90 DỨT KHOÁT (0 ĐỘ KHÓA <-> 160 ĐỘ MỞ)");
-    Serial.printf("  Chân PWM Servo: D%d | Chân Relay 5V: D%d\n", PIN_SERVO, PIN_RELAY_SERVO);
+    Serial.println("     CHUONG TRINH TEST TOAN DIEN SERVO SG90 (ESP32)");
+    Serial.printf("     - Chan PWM Servo  : D%d (GPIO %d)\n", PIN_SERVO, PIN_SERVO);
+    Serial.printf("     - Chan Relay IN   : D%d (GPIO %d)\n", PIN_RELAY_SERVO, PIN_RELAY_SERVO);
     Serial.println("=======================================================");
 
+    // 1. Kích hoạt chân Rơ-le luôn BẬT trong suốt quá trình test để cấp điện liên tục
     pinMode(PIN_RELAY_SERVO, OUTPUT);
-    digitalWrite(PIN_RELAY_SERVO, RELAY_OFF);
-    pinMode(PIN_SERVO, OUTPUT);
-    digitalWrite(PIN_SERVO, LOW);
+    digitalWrite(PIN_RELAY_SERVO, RELAY_ON);
+    Serial.println("[RELAY] Da bat Relay D25 (LOW) cap nguon 5V cho Servo.");
 
+    // 2. Cấu hình Timer PWM cho Servo
     ESP32PWM::allocateTimer(0);
     ESP32PWM::allocateTimer(1);
     ESP32PWM::allocateTimer(2);
     ESP32PWM::allocateTimer(3);
-    servoLock.setPeriodHertz(50);
+    myServo.setPeriodHertz(50); // Tần số chuẩn 50Hz cho servo
 
-    // Khởi đầu: Đưa về 0 độ (Đóng chốt) trước
-    Serial.println("[KHOI DONG] Dua Servo ve 0 DO (Khoa chot)...");
-    moveToAngle(ANGLE_LOCK);
-    delay(1000);
+    // Dải xung chuẩn 500µs - 2400µs cho SG90
+    myServo.attach(PIN_SERVO, 500, 2400);
 
-    Serial.println("[BAT DAU] Chu trinh vong lap tu dong (0 do <-> 160 do)!\n");
+    Serial.println("\n>>> HUONG DAN XEM SERVO:");
+    Serial.println("1. Servo se quay qua lai giua 3 moc: 0 DO -> 90 DO -> 160 DO");
+    Serial.println("2. Moi vi tri se dung yen 2 giay de ban quan sat.");
+    Serial.println("=======================================================\n");
 }
 
 void loop() {
-    // BƯỚC 1: QUAY SANG 160 ĐỘ (MỞ TOANG CỬA DỨT KHOÁT)
-    Serial.println(">>> [MO CUA]   Quay sang: 160 DO (Mo toang cua)...");
-    moveToAngle(ANGLE_UNLOCK);
-    delay(2000); // Giữ mở trong 2s
+    // Vị trí 1: 0 độ (Đóng chốt khóa)
+    Serial.println(">>> [1] Quay ve: 0 DO (KHOA CHOT) - Dung 2 giay...");
+    myServo.write(0);
+    delay(2000);
 
-    // BƯỚC 2: QUAY TRỞ VỀ 0 ĐỘ (ĐÓNG KHÓA CỬA)
-    Serial.println("<<< [KHOA CUA] Quay tro ve: 0 DO (Dong chot an toan)...\n");
-    moveToAngle(ANGLE_LOCK);
-    delay(2000); // Giữ khóa trong 2s
+    // Vị trí 2: 90 độ (Góc vuông trung gian)
+    Serial.println(">>> [2] Quay sang: 90 DO (TRUNG GIAN) - Dung 2 giay...");
+    myServo.write(90);
+    delay(2000);
+
+    // Vị trí 3: 160 độ (Mở toang cửa dứt khoát)
+    Serial.println(">>> [3] Quay sang: 160 DO (MO TOANG CUA) - Dung 2 giay...");
+    myServo.write(160);
+    delay(2000);
 }

@@ -1,55 +1,51 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Header } from "./components/Header";
 import { KpiCards } from "./components/KpiCards";
 import { ControlPanel } from "./components/ControlPanel";
 import { DistanceChart } from "./components/DistanceChart";
 import { AlertsList } from "./components/AlertsList";
 import { AdminConfigModal } from "./components/AdminConfigModal";
-import { AzureClient, ConnectionStatus } from "./lib/azureClient";
+import { LoginModal } from "./components/LoginModal";
 import { FirebaseClient } from "./lib/firebaseClient";
-import { TelemetryData, HistoryPoint, AlertItem, DeviceConfig, UserPrincipal } from "./types";
+import { TelemetryData, HistoryPoint, AlertItem, DeviceConfig, ConnectionStatus } from "./types";
 
 export const App: React.FC = () => {
   const [telemetry, setTelemetry] = useState<TelemetryData | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [wsStatus, setWsStatus] = useState<ConnectionStatus>("CONNECTING");
-  const [user, setUser] = useState<UserPrincipal | null>(null);
-  const [config, setConfig] = useState<DeviceConfig>({ thresholdCm: 50, telemetryIntervalMs: 15000 });
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [config, setConfig] = useState<DeviceConfig>({ thresholdCm: 12, telemetryIntervalMs: 1000 });
   const [isConfigOpen, setIsConfigOpen] = useState<boolean>(false);
+  const [isLoginOpen, setIsLoginOpen] = useState<boolean>(false);
+  const [secondsAgo, setSecondsAgo] = useState<number | null>(null);
 
-  // Load ban đầu từ REST APIs / Azure Cold Storage
-  const loadInitialData = useCallback(async () => {
-    try {
-      // 1. Lịch sử đo đạc từ Azure Table Storage
-      const hist = await AzureClient.fetchHistory();
-      if (hist && hist.length > 0) {
-        setHistory(hist);
-      }
+  // Mốc thời gian nhận gói tin telemetry gần nhất (dùng để phát hiện Offline chính xác)
+  const lastArrivalRef = useRef<number>(Date.now());
 
-      // 2. Danh sách cảnh báo đã ghi nhận từ Azure
-      const alertList = await AzureClient.fetchAlerts();
-      if (alertList && alertList.length > 0) {
-        setAlerts(alertList);
+  // 1. Lắng nghe trạng thái đăng nhập Firebase Authentication
+  useEffect(() => {
+    const unsubAuth = FirebaseClient.onAuthChanged((user) => {
+      if (user) {
+        setUserEmail(user.email);
+        setIsLoginOpen(false);
+      } else {
+        setUserEmail(null);
       }
+    });
 
-      // 3. Thông tin phân quyền Easy Auth
-      const userInfo = await AzureClient.fetchUserPrincipal();
-      if (userInfo) {
-        setUser(userInfo);
-      }
-    } catch (e) {
-      console.warn("[App] Azure initial load notice:", e);
-    }
+    return () => unsubAuth();
   }, []);
 
+  // 2. Lắng nghe dữ liệu Realtime từ Firebase Realtime Database
   useEffect(() => {
-    loadInitialData();
-
-    // 1. Lắng nghe HOT PATH: Firebase Realtime Database (<50ms)
+    // A. Lắng nghe luồng Telemetry
     const unsubTelemetry = FirebaseClient.subscribeTelemetry((newData) => {
-      setTelemetry((prev) => ({ ...prev, ...newData, status: "ONLINE" }));
+      lastArrivalRef.current = Date.now();
+      setTelemetry({ ...newData, status: "ONLINE" });
       setWsStatus("CONNECTED");
+      setSecondsAgo(0);
+
       setHistory((prev) => {
         const newPoint: HistoryPoint = {
           timestamp: new Date().toISOString(),
@@ -65,53 +61,50 @@ export const App: React.FC = () => {
       });
     });
 
-    // 2. Lắng nghe trạng thái thiết bị từ Firebase
+    // B. Lắng nghe trạng thái thiết bị
     const unsubStatus = FirebaseClient.subscribeStatus((online) => {
       setTelemetry((prev) => prev ? { ...prev, status: online ? "ONLINE" : "OFFLINE" } : null);
     });
 
-    // 3. Lắng nghe danh sách cảnh báo đột nhập từ Firebase
+    // C. Lắng nghe nhật ký sự cố đột nhập (limitToLast 50)
     const unsubAlerts = FirebaseClient.subscribeAlerts((items) => {
-      if (items.length > 0) {
-        setAlerts(items);
-      }
+      setAlerts(items);
     });
 
-    // 4. Lắng nghe cấu hình Device Config từ Firebase
+    // D. Lắng nghe cấu hình thiết bị
     const unsubConfig = FirebaseClient.subscribeConfig((newCfg) => {
       setConfig(newCfg);
     });
-
-    // 5. Fallback: Kết nối song song với Azure Web PubSub nếu cần
-    const azureClient = new AzureClient({
-      onTelemetry: (newData) => {
-        setTelemetry((prev) => ({ ...prev, ...newData, status: "ONLINE" }));
-      },
-      onAlert: (alertData) => {
-        setTelemetry((prev) => (prev ? { ...prev, alarm: true } : null));
-      },
-      onDeviceOffline: () => {
-        setTelemetry((prev) => prev ? { ...prev, status: "OFFLINE" } : null);
-      },
-      onStatusChange: (status) => {
-        // Chỉ cập nhật nếu Firebase chưa kết nối
-        if (wsStatus !== "CONNECTED") {
-          setWsStatus(status);
-        }
-      }
-    });
-    azureClient.connect();
 
     return () => {
       unsubTelemetry();
       unsubStatus();
       unsubAlerts();
       unsubConfig();
-      azureClient.disconnect();
     };
-  }, [loadInitialData]);
+  }, []);
 
-  const deviceOnline = telemetry?.status !== "OFFLINE";
+  // 3. Bộ đếm nhịp tim (Heartbeat Ticker): Đếm số giây kể từ lần cuối nhận telemetry
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - lastArrivalRef.current) / 1000);
+      setSecondsAgo(elapsed);
+
+      // Nếu quá 8 giây không có tin mới từ ESP32 -> đánh dấu OFFLINE
+      if (elapsed > 8) {
+        setTelemetry((prev) => prev ? { ...prev, status: "OFFLINE" } : null);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleLogout = async () => {
+    await FirebaseClient.logout();
+    setUserEmail(null);
+  };
+
+  const deviceOnline = telemetry?.status !== "OFFLINE" && (secondsAgo === null || secondsAgo <= 8);
   const hasAlarm = telemetry?.alarm === true;
 
   return (
@@ -120,8 +113,11 @@ export const App: React.FC = () => {
       <Header
         wsStatus={wsStatus}
         deviceOnline={deviceOnline}
-        user={user}
+        userEmail={userEmail}
         hasAlarm={hasAlarm}
+        secondsSinceLastHeartbeat={secondsAgo}
+        onOpenLogin={() => setIsLoginOpen(true)}
+        onLogout={handleLogout}
       />
 
       {/* 2. Thẻ KPI đo đạc cảm biến thời gian thực */}
@@ -130,10 +126,10 @@ export const App: React.FC = () => {
         thresholdCm={config.thresholdCm}
       />
 
-      {/* 3. Bảng điều khiển Hybrid Cloud (Khóa chống bấm lặp 3.5s) */}
+      {/* 3. Bảng điều khiển Realtime (Đóng vòng lặp điều khiển) */}
       <ControlPanel
         telemetry={telemetry}
-        onRefresh={loadInitialData}
+        onRefresh={() => { lastArrivalRef.current = Date.now(); setSecondsAgo(0); }}
         onOpenSettings={() => setIsConfigOpen(true)}
       />
 
@@ -156,9 +152,16 @@ export const App: React.FC = () => {
         onConfigSaved={(newCfg) => setConfig(newCfg)}
       />
 
+      {/* 6. Modal Đăng nhập Quản trị viên (Firebase Auth) */}
+      <LoginModal
+        isOpen={isLoginOpen}
+        onClose={() => setIsLoginOpen(false)}
+        onLoginSuccess={(email) => setUserEmail(email)}
+      />
+
       {/* Footer */}
       <footer style={{ marginTop: "40px", textAlign: "center", color: "var(--text-muted)", fontSize: "0.8rem", paddingBottom: "20px" }}>
-        <p>Hệ Thống Báo Động Chống Trộm IoT • Hybrid Cloud: Firebase Realtime Database & Microsoft Azure • Dual-Core ESP32</p>
+        <p>Hệ Thống Báo Động Chống Trộm IoT • Firebase Realtime Cloud & Dual-Core ESP32 • Chuẩn An Ninh</p>
       </footer>
     </div>
   );

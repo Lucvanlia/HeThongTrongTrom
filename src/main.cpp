@@ -2,7 +2,6 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
-#include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <Wire.h>
@@ -16,31 +15,31 @@ using namespace system_secrets;
 using namespace Config;
 
 // ============================================================================
-// 1. DỮ LIỆU DÙNG CHUNG GIỮA 2 NHÂN (SHARED STATE & MUTEX)
+// 1. DỮ LIỆU DÙNG CHUNG GIỮA CÁC NHÂN (SHARED STATE & MUTEX)
 // ============================================================================
 struct SharedState {
     bool     armed = false;
     bool     alarm = false;
     bool     pir = false;
-    bool     doorLocked = true;        // Mặc định cửa đóng
+    bool     doorLocked = true;           // Mặc định cửa đóng
     float    distanceCm = -1.0f;
     uint32_t alarmSinceMs = 0;
-    uint16_t thresholdCm = 12;         // Ngưỡng tiếp cận gần (12cm: <12cm là tay/người, 14cm là mặt bàn trống)
-    uint32_t autoRelockAtMs = 0;       // Hẹn giờ tự động đóng chốt lại sau 2s
-    uint32_t exitDelayUntilMs = 0;     // Hoãn báo động 10s khi người nhà ấn nút đi ra
+    uint16_t thresholdCm = 12;            // Ngưỡng tiếp cận gần (12cm: <12cm là người/tay, 14cm mặt bàn trống)
+    uint32_t autoRelockAtMs = 0;          // Hẹn giờ tự động đóng chốt lại sau 2s
+    uint32_t exitDelayUntilMs = 0;        // Hoãn báo động 10s khi người nhà ấn nút đi ra
     bool     autoDoorGuestActive = false; // Cờ báo cửa đang mở đón khách
 };
 
 struct AlertEvent {
-    char  sensor[8];     // "PIR" | "SONAR"
+    char  sensor[16];                     // Đủ dung lượng chứa "PIR+SONAR" (10 bytes) không bị cắt ngắn
     float distanceCm;
 };
 
 static SharedState        g;
 static portMUX_TYPE       gMux = portMUX_INITIALIZER_UNLOCKED;
 static QueueHandle_t      alertQueue;
+static QueueHandle_t      doorQueue;      // Hàng đợi điều khiển Servo bất đồng bộ (Non-blocking)
 static Preferences        prefs;
-static volatile bool      reportPending = true;
 
 // -----------------------------------------------------------------------------
 // CẤU HÌNH CỰC TÍNH VÀ ÂM THANH
@@ -55,7 +54,7 @@ constexpr bool ENABLE_BUZZER = true;
 static LiquidCrystal_I2C  lcd(Config::LCD_I2C_ADDR, Config::LCD_COLS, Config::LCD_ROWS);
 static Servo              servoLock;
 
-// Kết nối mạng TLS & MQTT Azure + HTTP Client Firebase
+// Kết nối mạng TLS Client dùng chung
 static WiFiClientSecure   tlsClient;
 
 // Helper điều khiển LED theo cực tính transistor A1015
@@ -67,7 +66,7 @@ static inline void setLedArmedPin(bool on) {
     digitalWrite(Config::PIN_LED_ARMED, INVERT_LEDS ? (on ? LOW : HIGH) : (on ? HIGH : LOW));
 }
 
-// Lấy bản sao an toàn của SharedState (Snapshot)
+// Lấy bản sao an toàn của SharedState (Snapshot với spinlock ngắn gọn)
 static SharedState snapshot() {
     portENTER_CRITICAL(&gMux);
     SharedState s = g;
@@ -84,37 +83,44 @@ static uint64_t getEpochMs() {
 }
 
 // ============================================================================
-// 2. ĐIỀU KHIỂN CHẤP HÀNH (RELAY + SERVO CHỐT CỬA)
+// 2. ĐIỀU KHIỂN CHẤP HÀNH BẤT ĐỒNG BỘ (DOOR TASK & SERVO POWER-GATING)
+// Tách điều khiển servo ra task riêng giúp sensorTask không bị block 520ms!
 // ============================================================================
-static void setLockState(bool locked) {
+static void requestLockState(bool locked) {
     portENTER_CRITICAL(&gMux);
     g.doorLocked = locked;
     portEXIT_CRITICAL(&gMux);
 
-    // KỸ THUẬT POWER-GATING TRIỆT ĐỂ (CHỐNG RUNG GIẬT, CHỐNG DÒNG RÒ KÝ SINH):
-    // 1. Kích Rơ-le ĐÓNG cấp điện 5V cho Servo
-    digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_ON);
-    vTaskDelay(pdMS_TO_TICKS(50)); // Chờ điện áp 5V ổn định nhanh (50ms)
+    if (doorQueue != nullptr) {
+        xQueueOverwrite(doorQueue, &locked); // Gửi lệnh ngay lập tức, không chặn
+    }
+}
 
-    // 2. Gắn chân PWM và phát xung điều khiển góc quay (600µs - 2400µs an toàn)
-    servoLock.attach(Config::PIN_SERVO, Config::SERVO_MIN_US, Config::SERVO_MAX_US);
-    servoLock.write(locked ? Config::SERVO_LOCK_ANGLE : Config::SERVO_UNLOCK_ANGLE);
-    vTaskDelay(pdMS_TO_TICKS(Config::SERVO_MOVE_TIME_MS)); // Chờ servo quay dứt khoát (450ms)
+static void doorTask(void* pvParameters) {
+    bool targetLocked = true;
+    for (;;) {
+        if (xQueueReceive(doorQueue, &targetLocked, portMAX_DELAY) == pdTRUE) {
+            // ĐIỀU KHIỂN SERVO TRỰC TIẾP TỪ NGUỒN HẠ ÁP 5V:
+            // 1. Gắn chân PWM và phát xung điều khiển góc quay (600µs - 2400µs an toàn)
+            servoLock.attach(Config::PIN_SERVO, Config::SERVO_MIN_US, Config::SERVO_MAX_US);
+            servoLock.write(targetLocked ? Config::SERVO_LOCK_ANGLE : Config::SERVO_UNLOCK_ANGLE);
+            vTaskDelay(pdMS_TO_TICKS(Config::SERVO_MOVE_TIME_MS));
 
-    // 3. NGẮT XUNG PWM (DETACH) VÀ KÉO CHÂN TÍN HIỆU VỀ 0V
-    // Triệt tiêu 100% dòng rò ký sinh qua diode ESD của servo (chống rung giật tại chỗ)
-    servoLock.detach();
-    pinMode(Config::PIN_SERVO, OUTPUT);
-    digitalWrite(Config::PIN_SERVO, LOW);
-    vTaskDelay(pdMS_TO_TICKS(20));
+            // 2. NGẮT XUNG PWM (DETACH) VÀ KÉO CHÂN TÍN HIỆU VỀ 0V
+            // Tự động ngủ: triệt tiêu 100% rung giật, không nóng motor, không cần Rơ-le!
+            servoLock.detach();
+            pinMode(Config::PIN_SERVO, OUTPUT);
+            digitalWrite(Config::PIN_SERVO, LOW);
 
-    // 4. Kích Rơ-le NGẮT điện 5V cách ly hoàn toàn
-    digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_OFF);
+            portENTER_CRITICAL(&gMux);
+            g.doorLocked = targetLocked;
+            portEXIT_CRITICAL(&gMux);
 
-    reportPending = true;
-    Serial.printf("[ACTUATOR] Chot cua: %s (%d do)\n",
-                  locked ? "DONG KHOA" : "MO CHOT",
-                  locked ? Config::SERVO_LOCK_ANGLE : Config::SERVO_UNLOCK_ANGLE);
+            Serial.printf("[ACTUATOR] Chot cua: %s (%d do)\n",
+                          targetLocked ? "DONG KHOA" : "MO CHOT",
+                          targetLocked ? Config::SERVO_LOCK_ANGLE : Config::SERVO_UNLOCK_ANGLE);
+        }
+    }
 }
 
 static void setArmed(bool armed) {
@@ -127,10 +133,7 @@ static void setArmed(bool armed) {
     portEXIT_CRITICAL(&gMux);
 
     // Khi chuyển chế độ: luôn đưa chốt về trạng thái đóng an toàn ban đầu
-    setLockState(true);
-
-    prefs.putBool("armed", armed);
-    reportPending = true;
+    requestLockState(true);
     Serial.printf("[SYSTEM] Che do he thong: %s\n", armed ? "ARMED (BAT BAO VE)" : "DISARMED (CUA TU DONG THONG MINH)");
 }
 
@@ -138,22 +141,24 @@ static void silenceAlarm() {
     portENTER_CRITICAL(&gMux);
     g.alarm = false;
     portEXIT_CRITICAL(&gMux);
-    reportPending = true;
     Serial.println("[SYSTEM] Da tat coi bao dong");
 }
 
-static void setThreshold(int cm) {
-    cm = constrain(cm, Config::MIN_THRESHOLD_CM, Config::MAX_THRESHOLD_CM);
+static void setThreshold(uint16_t thr) {
+    if (thr < Config::MIN_THRESHOLD_CM) thr = Config::MIN_THRESHOLD_CM;
+    if (thr > Config::MAX_THRESHOLD_CM) thr = Config::MAX_THRESHOLD_CM;
+
     portENTER_CRITICAL(&gMux);
-    g.thresholdCm = (uint16_t)cm;
+    g.thresholdCm = thr;
     portEXIT_CRITICAL(&gMux);
-    prefs.putUShort("thr", (uint16_t)cm);
-    reportPending = true;
-    Serial.printf("[SYSTEM] Da cap nhat nguong Sonar: %d cm\n", cm);
+
+    prefs.putUShort("thr", thr);
+    Serial.printf("[CONFIG] Da cap nhat nguong cu ly moi: %u cm (da luu Flash NVS)\n", thr);
 }
 
 // ============================================================================
 // 3. CORE 1: TÁC VỤ CẢM BIẾN & LOGIC CỬA TỰ ĐỘNG / BÁO ĐỘNG (Priority 2)
+// Hoạt động 100% NON-BLOCKING theo chu kỳ 200ms
 // ============================================================================
 static float readDistanceCm() {
     digitalWrite(Config::PIN_US_TRIG, LOW);
@@ -172,23 +177,23 @@ static void sensorTask(void* pvParameters) {
     TickType_t lastWakeTime = xTaskGetTickCount();
     static bool lastBtnState = HIGH;
     static unsigned long lastBtnDebounceMs = 0;
-    static bool lastSwitchState = HIGH;
+    
+    // Khởi tạo trạng thái công tắc gạt bằng giá trị vật lý thực tế lúc boot (tránh kích hoạt lặp)
+    static bool lastSwitchState = (digitalRead(Config::PIN_SWITCH_ARM) == LOW);
     static unsigned long lastSwitchDebounceMs = 0;
     static unsigned long lastIntruderSeenMs = 0;
+    static uint8_t sonarHitCount = 0; // Bộ lọc xác nhận 2 lần liên tiếp chống nhiễu xung đơn lẻ
 
     for (;;) {
         const unsigned long now = millis();
 
         // 1. ĐỌC CÔNG TẮC GẠT 3 CHÂN (Chân D26 - Ưu tiên điều khiển tại chỗ)
-        const bool curSwitch = digitalRead(Config::PIN_SWITCH_ARM);
+        const bool curSwitch = (digitalRead(Config::PIN_SWITCH_ARM) == LOW);
         if (curSwitch != lastSwitchState && (now - lastSwitchDebounceMs > 250)) {
             lastSwitchDebounceMs = now;
             lastSwitchState = curSwitch;
-            // Gạt sang chân nối GND (LOW) = ARMED (Bật bảo vệ)
-            // Gạt sang chân hở (HIGH) = DISARM (Cửa tự động đón khách)
-            const bool newArmed = (curSwitch == LOW);
-            Serial.printf("[SWITCH D26] Cong tac gat -> %s\n", newArmed ? "ARMED (BAT BAO VE)" : "DISARMED (CUA TU DONG)");
-            setArmed(newArmed);
+            Serial.printf("[SWITCH D26] Cong tac gat -> %s\n", curSwitch ? "ARMED (BAT BAO VE)" : "DISARMED (CUA TU DONG)");
+            setArmed(curSwitch);
         }
 
         // 2. ĐỌC NÚT NHẤN EXIT (Chân D27 - Mở cửa thoát hiểm & Tắt báo động)
@@ -198,8 +203,8 @@ static void sensorTask(void* pvParameters) {
             lastBtnState = curBtn;
             if (curBtn == LOW) {
                 Serial.println("[BUTTON D27] Nguoi nha an nut Exit -> Mo chot cua & Tat bao dong!");
-                silenceAlarm();      // Tắt còi ngay lập tức nếu đang hú
-                setLockState(false); // Mở toang chốt cửa 160 độ
+                silenceAlarm();          // Tắt còi ngay lập tức nếu đang hú
+                requestLockState(false); // Mở toang chốt cửa 160 độ (Non-blocking)
 
                 portENTER_CRITICAL(&gMux);
                 g.autoRelockAtMs = now + Config::AUTO_RELOCK_DELAY_MS; // Tự động khóa lại sau 2s
@@ -222,7 +227,7 @@ static void sensorTask(void* pvParameters) {
 
         if (triggerRelock) {
             Serial.println("[ACTUATOR] Het 2 giay mo cua -> Tu dong dong chot khoa an toan (Auto-Relock)!");
-            setLockState(true); // Khóa chốt an toàn 0 độ
+            requestLockState(true); // Khóa chốt an toàn 0 độ (Non-blocking)
         }
 
         // 4. ĐỌC CẢM BIẾN SIÊU ÂM & CẢM BIẾN PIR
@@ -231,36 +236,32 @@ static void sensorTask(void* pvParameters) {
         const bool  warmupDone = (now > Config::PIR_WARMUP_MS);
         const char* alertSource = nullptr;
 
+        // NHẬN DIỆN KHOẢNG CÁCH TIẾP CẬN (1.5cm đến 12cm):
+        // Chấp nhận mọi khoảng cách từ 1.5cm trở lên để khi đưa tay sát (2cm - 3cm như trên LCD) hệ thống nhận diện tức thì!
+        // Mặt bàn trống (14cm) hoặc không có vật cản (>12cm hoặc -1) sẽ bị loại bỏ.
+        const bool objectDetected = (distVal >= 1.5f && distVal <= (float)g.thresholdCm);
+
+        bool triggerGuestOpen = false;
+        bool triggerAutoClearLog = false;
+
         portENTER_CRITICAL(&gMux);
         g.pir = pirVal;
         g.distanceCm = distVal;
 
-        // BỘ LỌC CHỐNG BÁO GIẢ KHOẢNG CÁCH 3CM (BỊ MÉP THÙNG CARTON CHẮN):
-        // HC-SR04 chỉ nhận diện người khi khoảng cách từ 5cm trở lên và <= ngưỡng (12cm)
-        // Khoảng cách < 5cm xem là mép vỏ hộp/nhiễu vật lý -> BỎ QUA để không bị hú còi oan!
-        const bool objectDetected = (distVal >= 5.0f && distVal <= (float)g.thresholdCm);
-
         // ---------------------------------------------------------------------
         // KỊCH BẢN 1: KHI TẮT BẢO VỆ (DISARM) -> CHẾ ĐỘ CỬA TỰ ĐỘNG ĐÓN KHÁCH
-        // Điều kiện: Khi có khách đến gần cửa (đáp ứng đồng thời PIR + Sonar)
         // ---------------------------------------------------------------------
         if (!g.armed) {
             if (objectDetected && pirVal) {
-                // Khách đến gần: tự động mở cửa nếu cửa đang đóng!
                 if (g.doorLocked) {
-                    Serial.printf("[SMART-DOOR] Phat hien khach (PIR + Sonar %.1f cm) -> Tu dong mo cua!\n", distVal);
-                    portEXIT_CRITICAL(&gMux);
-                    setLockState(false); // Mở chốt cửa 160 độ
-                    portENTER_CRITICAL(&gMux);
+                    triggerGuestOpen = true;
                 }
-                // Gia hạn thời gian mở cửa 2 giây tính từ lần phát hiện cuối
                 g.autoRelockAtMs = now + Config::AUTO_RELOCK_DELAY_MS;
                 g.autoDoorGuestActive = true;
             }
         } 
         // ---------------------------------------------------------------------
         // KỊCH BẢN 2: KHI BẬT BẢO VỆ (ARMED) -> BÁO ĐỘNG CHỐNG TRỘM
-        // QUY CHUẨN KÉP BẮT BUỘC: ĐỦ CẢ 2 CẢM BIẾN (PIR CÓ NGƯỜI VÀ SONAR ĐO TRONG VÙNG)
         // ---------------------------------------------------------------------
         else {
             const bool exitDelayActive = (now < g.exitDelayUntilMs);
@@ -275,15 +276,12 @@ static void sensorTask(void* pvParameters) {
 
             if (g.alarm) {
                 if (intruderDetected) {
-                    // Nếu vẫn còn trộm / bàn tay trong vùng tiếp cận: Cập nhật mốc thời gian
                     lastIntruderSeenMs = now;
                 } else {
-                    // KHI ĐÃ RÚT TAY / NGƯỜI RỜI ĐI:
-                    // Sau 2 giây không còn người -> TỰ ĐỘNG NGẮT CÒI & HẾT BÁO ĐỘNG (Auto-Clear)!
+                    // Sau 2 giây không còn người -> TỰ ĐỘNG NGẮT CÒI (Auto-Clear)
                     if (now - lastIntruderSeenMs >= 2000) {
                         g.alarm = false;
-                        reportPending = true;
-                        Serial.println("[ALARM] Nguoi da roi khoi vung quet -> Tu dong tat bao dong (Auto-Clear)!");
+                        triggerAutoClearLog = true;
                     }
                 }
 
@@ -294,6 +292,16 @@ static void sensorTask(void* pvParameters) {
             }
         }
         portEXIT_CRITICAL(&gMux);
+
+        // THỰC HIỆN CÁC THAO TÁC IN VÀ GỬI LỆNH NGOÀI VÙNG CRITICAL SECTION (An toàn 100%):
+        if (triggerGuestOpen) {
+            Serial.printf("[SMART-DOOR] Phat hien khach (PIR + Sonar %.1f cm) -> Tu dong mo cua!\n", distVal);
+            requestLockState(false);
+        }
+
+        if (triggerAutoClearLog) {
+            Serial.println("[ALARM] Nguoi da roi khoi vung quet -> Tu dong tat bao dong (Auto-Clear)!");
+        }
 
         // Đẩy sự kiện đột nhập vào hàng đợi gửi tin lên Cloud
         if (alertSource != nullptr) {
@@ -336,32 +344,27 @@ static void updateLcdDisplay(const SharedState& s) {
             }
         }
     } else if (!s.armed && s.autoDoorGuestActive) {
-        // Màn hình khi cửa tự động mở đón khách
         snprintf(line1, sizeof(line1), "CUA TU DONG MO  ");
         snprintf(line2, sizeof(line2), "XIN CHAO KHACH! ");
     } else if (s.autoRelockAtMs > 0 && now < s.autoRelockAtMs) {
-        // Màn hình khi người nhà ấn nút Exit Button mở cửa (Đếm ngược tự khóa)
         const int secLeft = (int)((s.autoRelockAtMs - now + 999) / 1000);
         snprintf(line1, sizeof(line1), "MO CUA THOAT    ");
         snprintf(line2, sizeof(line2), "TU KHOA SAU: %ds ", secLeft);
     } else {
-        // Dòng 1: Trạng thái hệ thống + Chốt khóa Servo
+        // Dòng 1: Trạng thái hệ thống + Chốt khóa Servo (Chuẩn 16 ký tự)
         if (s.armed) {
             snprintf(line1, sizeof(line1), "ARMED  |KHOA CUA");
         } else {
             snprintf(line1, sizeof(line1), "DISARM |DONG CUA");
         }
 
-        // Dòng 2: Chỉ số cảm biến (Khoảng cách + PIR)
+        // Dòng 2: Chỉ số cảm biến (Căn chỉnh chính xác 16 ký tự loại bỏ ký tự rác)
         if (s.armed && s.pir) {
-            // Khi phát hiện có người từ xa (Demo cấp 1)
-            snprintf(line2, sizeof(line2), "D:%2dcm|CO NGUOI", (int)s.distanceCm);
+            snprintf(line2, sizeof(line2), "D:%2dcm|CO NGUOI ", (int)s.distanceCm);
         } else if (s.distanceCm >= 0.0f) {
-            snprintf(line2, sizeof(line2), "D:%3dcm|PIR:%s",
-                     (int)s.distanceCm, s.pir ? "CO " : "KO ");
+            snprintf(line2, sizeof(line2), "D:%3dcm |PIR:%-3s", (int)s.distanceCm, s.pir ? "CO" : "KO");
         } else {
-            snprintf(line2, sizeof(line2), "D: --- |PIR:%s",
-                     s.pir ? "CO " : "KO ");
+            snprintf(line2, sizeof(line2), "D: ---  |PIR:%-3s", s.pir ? "CO" : "KO");
         }
     }
 
@@ -376,28 +379,24 @@ static void alarmOutputTask(void* pvParameters) {
         const SharedState s = snapshot();
         const unsigned long now = millis();
 
-        // 1. ĐIỀU KHIỂN DÃY LED XANH (D33):
-        // Sáng LÊN KHI VÀ CHỈ KHI CỬA MỞ (khi ấn nút Exit mở cửa hoặc Cửa tự động mở đón khách)!
-        // Khi cửa đóng khóa lại: TẮT HẲN!
+        // 1. ĐIỀU KHIỂN DÃY LED XANH (D33): Sáng khi cửa mở, tắt khi cửa đóng
         setLedArmedPin(!s.doorLocked);
 
         // 2. ĐIỀU KHIỂN DÃY LED ĐỎ (D32) & CÒI HÚ (D23) - 3 CẤP ĐỘ DEMO CHUẨN:
         if (s.alarm) {
-            // CẤP ĐỘ 2: TIẾP CẬN GẦN NGUY HIỂM -> LED ĐỎ NHẤP NHÁY 2Hz + CÒI BÍP BÍP DỒN DẬP!
-            const bool toggleLed = ((now / 250) % 2 == 0);
-            setLedAlarmPin(toggleLed);
+            // CẤP ĐỘ 2: TIẾP CẬN GẦN NGUY HIỂM -> CÒI BÁO ĐỘNG & LED ĐỎ NHẤP NHÁY DỒN DẬP ĐỒNG BỘ
+            // Nhịp chớp 200ms BẬT - 200ms TẮT: Còi kêu "TÍT... TÍT... TÍT..." dồn dập chuẩn hệ thống báo trộm
+            const bool alarmPulse = ((now / 200) % 2 == 0);
+            setLedAlarmPin(alarmPulse);
 
-            // Còi thông minh nhịp đôi: BÍP 80ms - NGHỈ 100ms - BÍP 80ms - NGHỈ 740ms
             if (ENABLE_BUZZER) {
-                const uint32_t cycleMs = now % 1000;
-                const bool beepNow = (cycleMs < 80) || (cycleMs >= 180 && cycleMs < 260);
-                digitalWrite(Config::PIN_BUZZER, beepNow ? HIGH : LOW);
+                digitalWrite(Config::PIN_BUZZER, alarmPulse ? HIGH : LOW);
             } else {
                 digitalWrite(Config::PIN_BUZZER, LOW);
             }
         } 
         else if (s.armed && s.pir) {
-            // CẤP ĐỘ 1: PHÁT HIỆN CÓ NGƯỜI TỪ XA (PIR BÁO) -> LED ĐỎ SÁNG ĐỨNG YÊN, CÒI IM LẶNG!
+            // CẤP ĐỘ 1: PHÁT HIỆN CÓ NGƯỜI TỪ XA (PIR BÁO) -> LED ĐỎ SÁNG ĐỨNG YÊN, CÒI IM LẶNG
             setLedAlarmPin(true);
             digitalWrite(Config::PIN_BUZZER, LOW);
         } 
@@ -417,13 +416,15 @@ static void alarmOutputTask(void* pvParameters) {
 
 // ============================================================================
 // 5. CORE 0: MẠNG WI-FI, FIREBASE REALTIME DATABASE (Priority 1)
+// Quản lý TLS an toàn, chống cạn kiệt Heap RAM
 // ============================================================================
 static void sendFirebaseTelemetry(const SharedState& s, uint32_t now) {
     if (WiFi.status() != WL_CONNECTED) return;
 
     HTTPClient http;
+    http.setTimeout(2500); // Đặt timeout 2.5s chống nghẽn mạng
     const String url = String("https://") + FIREBASE_HOST + FB_PATH_TELEMETRY + "?auth=" + FIREBASE_AUTH;
-    http.begin(url);
+    http.begin(tlsClient, url);
     http.addHeader("Content-Type", "application/json");
 
     JsonDocument doc;
@@ -440,15 +441,74 @@ static void sendFirebaseTelemetry(const SharedState& s, uint32_t now) {
     String body;
     serializeJson(doc, body);
     http.PUT(body);
-    http.end();
+    http.end(); // Giải phóng socket ngay lập tức
 }
 
 static void pollFirebaseControl() {
     if (WiFi.status() != WL_CONNECTED) return;
 
     HTTPClient http;
+    http.setTimeout(2500);
     const String url = String("https://") + FIREBASE_HOST + FB_PATH_CONTROL + "?auth=" + FIREBASE_AUTH;
-    http.begin(url);
+    http.begin(tlsClient, url);
+    int httpCode = http.GET();
+
+    bool needSilence = false;
+    if (httpCode == 200) {
+        String payload = http.getString();
+        if (payload != "null" && payload.length() > 5) {
+            JsonDocument doc;
+            DeserializationError err = deserializeJson(doc, payload);
+            if (!err) {
+                // 1. Xử lý lệnh ngắt còi hú tức thì
+                if (doc["silenceAlarm"] == true) {
+                    needSilence = true;
+                }
+
+                // 2. Xử lý lệnh có cmdId (chống xung đột với công tắc vật lý & không chạy lại lệnh cũ khi boot)
+                if (doc["cmdId"].is<uint64_t>()) {
+                    static uint64_t lastCmdId = 0;
+                    static bool     cmdInit   = false;
+                    const uint64_t  cmdId     = doc["cmdId"].as<uint64_t>();
+
+                    if (!cmdInit) {
+                        lastCmdId = cmdId; // Bỏ qua lệnh cũ tồn đọng từ trước khi ESP32 khởi động
+                        cmdInit   = true;
+                    } else if (cmdId != lastCmdId) {
+                        lastCmdId = cmdId;
+                        Serial.printf("[FIREBASE-CMD] Nhan lenh dieu khien moi cmdId: %llu\n", cmdId);
+
+                        if (doc["armed"].is<bool>()) {
+                            setArmed(doc["armed"].as<bool>());
+                        }
+                        if (doc["doorLocked"].is<bool>()) {
+                            requestLockState(doc["doorLocked"].as<bool>());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    http.end(); // BẮT BUỘC ĐÓNG KẾT NỐI GET TRƯỚC KHI MỞ KẾT NỐI PATCH (Tránh mở 2 kết nối TLS cùng lúc ngốn RAM)
+
+    if (needSilence) {
+        silenceAlarm();
+        HTTPClient patchHttp;
+        patchHttp.setTimeout(2500);
+        const String patchUrl = String("https://") + FIREBASE_HOST + FB_PATH_CONTROL + "?auth=" + FIREBASE_AUTH;
+        patchHttp.begin(tlsClient, patchUrl);
+        patchHttp.PATCH("{\"silenceAlarm\":false}");
+        patchHttp.end();
+    }
+}
+
+static void pollFirebaseConfig() {
+    if (WiFi.status() != WL_CONNECTED) return;
+
+    HTTPClient http;
+    http.setTimeout(2500);
+    const String url = String("https://") + FIREBASE_HOST + FB_PATH_CONFIG + "?auth=" + FIREBASE_AUTH;
+    http.begin(tlsClient, url);
     int httpCode = http.GET();
 
     if (httpCode == 200) {
@@ -456,15 +516,10 @@ static void pollFirebaseControl() {
         if (payload != "null" && payload.length() > 5) {
             JsonDocument doc;
             DeserializationError err = deserializeJson(doc, payload);
-            if (!err) {
-                // Nhận lệnh tắt còi từ Web
-                if (doc["silenceAlarm"] == true) {
-                    silenceAlarm();
-                    HTTPClient resetHttp;
-                    String patchUrl = String("https://") + FIREBASE_HOST + FB_PATH_CONTROL + "?auth=" + FIREBASE_AUTH;
-                    resetHttp.begin(patchUrl);
-                    resetHttp.PATCH("{\"silenceAlarm\":false}");
-                    resetHttp.end();
+            if (!err && doc["thresholdCm"].is<uint16_t>()) {
+                const uint16_t newThr = doc["thresholdCm"].as<uint16_t>();
+                if (newThr != g.thresholdCm) {
+                    setThreshold(newThr);
                 }
             }
         }
@@ -476,8 +531,9 @@ static void sendFirebaseAlert(const AlertEvent& ev) {
     if (WiFi.status() != WL_CONNECTED) return;
 
     HTTPClient http;
+    http.setTimeout(2500);
     const String url = String("https://") + FIREBASE_HOST + FB_PATH_ALERTS + "?auth=" + FIREBASE_AUTH;
-    http.begin(url);
+    http.begin(tlsClient, url);
     http.addHeader("Content-Type", "application/json");
 
     JsonDocument doc;
@@ -504,6 +560,7 @@ static void networkTask(void* pvParameters) {
     uint32_t lastWifiRetry      = 0;
     uint32_t lastFbTelemetry    = 0;
     uint32_t lastFbPollControl  = 0;
+    uint32_t lastFbPollConfig   = 0;
 
     for (;;) {
         const uint32_t now = millis();
@@ -526,7 +583,7 @@ static void networkTask(void* pvParameters) {
             Serial.printf("[FIREBASE-CORE0] Da gui canh bao dot nhap [%s] len Cloud Realtime!\n", ev.sensor);
         }
 
-        // 3. Đẩy Telemetry lên Firebase Realtime Database mỗi 1 giây (Hot Path <50ms)
+        // 3. Đẩy Telemetry lên Firebase Realtime Database mỗi 1 giây
         if (now - lastFbTelemetry >= Config::FB_STREAM_INTERVAL_MS) {
             lastFbTelemetry = now;
             const SharedState s = snapshot();
@@ -537,6 +594,12 @@ static void networkTask(void* pvParameters) {
         if (now - lastFbPollControl >= Config::FB_POLL_CONTROL_MS) {
             lastFbPollControl = now;
             pollFirebaseControl();
+        }
+
+        // 5. Đồng bộ cấu hình ngưỡng từ Web mỗi 5 giây
+        if (now - lastFbPollConfig >= Config::FB_POLL_CONFIG_MS) {
+            lastFbPollConfig = now;
+            pollFirebaseConfig();
         }
 
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -551,7 +614,7 @@ void setup() {
     delay(500);
 
     Serial.println("\n=======================================================");
-    Serial.println("  HE THONG IOT CANH BAO CHONG TROM & CUA TU DONG v2.4");
+    Serial.println("  HE THONG IOT CANH BAO CHONG TROM & CUA TU DONG v2.4.4");
     Serial.println("=======================================================");
 
     // Khởi tạo các chân GPIO cảm biến, còi, nút nhấn, công tắc và Relay
@@ -561,20 +624,17 @@ void setup() {
     pinMode(Config::PIN_BUZZER, OUTPUT);
     pinMode(Config::PIN_LED_ALARM, OUTPUT);
     pinMode(Config::PIN_LED_ARMED, OUTPUT);
-    pinMode(Config::PIN_RELAY_SERVO, OUTPUT);
     pinMode(Config::PIN_BUTTON_EXIT, INPUT_PULLUP);
-    pinMode(Config::PIN_SWITCH_ARM, INPUT_PULLUP); // Công tắc gạt 3 chân
+    pinMode(Config::PIN_SWITCH_ARM, INPUT_PULLUP);
 
     digitalWrite(Config::PIN_US_TRIG, LOW);
     digitalWrite(Config::PIN_BUZZER, LOW);
-    // Khởi tạo LED tắt hẳn theo cực tính A1015
     setLedAlarmPin(false);
     setLedArmedPin(false);
-    // Ngắt Rơ-le để bảo vệ nguồn Servo
-    digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_OFF);
 
-    // Khởi tạo giao tiếp I2C và Màn hình LCD 16x2
+    // Khởi tạo giao tiếp I2C và Màn hình LCD 16x2 với timeout chống treo bus
     Wire.begin(Config::PIN_I2C_SDA, Config::PIN_I2C_SCL);
+    Wire.setTimeOut(30); // 30ms timeout chống treo hệ thống nếu lỏng dây LCD
     lcd.init();
     lcd.backlight();
     lcd.setCursor(0, 0);
@@ -582,7 +642,7 @@ void setup() {
     lcd.setCursor(0, 1);
     lcd.print(" CHONG TROM v2.4");
 
-    // Khởi tạo Động cơ Servo SG90 (chốt cửa)
+    // Khởi tạo Động cơ Servo SG90
     ESP32PWM::allocateTimer(0);
     ESP32PWM::allocateTimer(1);
     ESP32PWM::allocateTimer(2);
@@ -593,32 +653,20 @@ void setup() {
 
     // Đọc trạng thái từ Flash NVS
     prefs.begin("chongtrom", false);
-    g.thresholdCm = prefs.getUShort("thr", 12); // Mặc định 12cm cho mô hình thùng bia
-    if (g.thresholdCm > 12) {
-        g.thresholdCm = 12; // Cố định 12cm để tránh mặt bàn 14cm kích hoạt báo động giả
+    g.thresholdCm = prefs.getUShort("thr", 12);
+    if (g.thresholdCm < Config::MIN_THRESHOLD_CM || g.thresholdCm > Config::MAX_THRESHOLD_CM) {
+        g.thresholdCm = 12;
         prefs.putUShort("thr", 12);
     }
 
     // ĐỌC VỊ TRÍ CÔNG TẮC GẠT D26 LÚC BOOT:
-    // Chân D26 gạt sang GND (LOW) = ARMED (Bật bảo vệ)
-    // Chân D26 hở (HIGH) = DISARM (Cửa tự động đón khách)
     const bool switchBoot = (digitalRead(Config::PIN_SWITCH_ARM) == LOW);
     g.armed = switchBoot;
     g.doorLocked = true; // Luôn đóng chốt ban đầu
 
-    // Đặt vị trí ban đầu & Self-Test Servo: Quay 160 độ (Mở) -> 0 độ (Khóa)
-    // Kỹ thuật Power-Gating triệt để: Kích rơ-le -> Gắn PWM -> Quay -> Detach -> Ngắt rơ-le
-    digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_ON);
-    delay(50);
-    servoLock.attach(Config::PIN_SERVO, Config::SERVO_MIN_US, Config::SERVO_MAX_US);
-    servoLock.write(Config::SERVO_UNLOCK_ANGLE); // Quay về 160 độ (Mở)
-    delay(450);
-    servoLock.write(Config::SERVO_LOCK_ANGLE);   // Quay về 0 độ (Khóa lại)
-    delay(Config::SERVO_MOVE_TIME_MS);
-    servoLock.detach();
-    pinMode(Config::PIN_SERVO, OUTPUT);
-    digitalWrite(Config::PIN_SERVO, LOW);
-    digitalWrite(Config::PIN_RELAY_SERVO, Config::RELAY_SERVO_OFF);
+    // Khởi tạo hàng đợi FreeRTOS
+    alertQueue = xQueueCreate(8, sizeof(AlertEvent));
+    doorQueue  = xQueueCreate(1, sizeof(bool)); // Hàng đợi 1 phần tử cho Servo điều khiển chốt cửa
 
     // Boot Self-Test: Chớp LED và bíp còi 1 tiếng ngắn 60ms rất êm
     setLedArmedPin(true);
@@ -634,15 +682,15 @@ void setup() {
     delay(600);
     lcd.clear();
 
-    // Khởi tạo hàng đợi cảnh báo FreeRTOS (8 sự kiện)
-    alertQueue = xQueueCreate(8, sizeof(AlertEvent));
-
     // Khởi tạo và ghim các Task vào 2 nhân độc lập:
     // Core 0: Mạng & Firebase Cloud Realtime Stream (Priority 1)
     xTaskCreatePinnedToCore(networkTask, "firebaseNetTask", 10240, nullptr, 1, nullptr, 0);
 
     // Core 1: Đọc cảm biến non-blocking & Cửa tự động (Priority 2)
     xTaskCreatePinnedToCore(sensorTask, "sensorTask", 4096, nullptr, 2, nullptr, 1);
+
+    // Core 1: Điều khiển chốt cửa Servo bất đồng bộ (Priority 2)
+    xTaskCreatePinnedToCore(doorTask, "doorTask", 2048, nullptr, 2, nullptr, 1);
 
     // Core 1: Phát còi, LED cảnh báo & Màn hình LCD (Priority 3 - Ưu tiên cao nhất)
     xTaskCreatePinnedToCore(alarmOutputTask, "alarmOutputTask", 3072, nullptr, 3, nullptr, 1);

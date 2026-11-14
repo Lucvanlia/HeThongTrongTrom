@@ -53,11 +53,11 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ telemetry, thresholdCm }) =>
             </span>
             <div style={{ marginTop: "8px" }}>
               <h2 style={{ fontSize: "1.35rem", fontWeight: 700, color: doorLocked ? "var(--cyan-accent)" : "var(--amber-accent)" }}>
-                {doorLocked ? "ĐÃ KHÓA (90°)" : "ĐANG MỞ (0°)"}
+                {doorLocked ? "ĐÃ KHÓA (0°)" : "ĐANG MỞ (160°)"}
               </h2>
             </div>
             <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>
-              Rơ-le 5V Power-Gating (GPIO 25)
+              Servo SG90 Chốt Cửa (GPIO 19)
             </p>
           </div>
           <div style={{

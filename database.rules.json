@@ -1,0 +1,19 @@
+{
+  "rules": {
+    "security": {
+      ".read": "auth != null",
+      "control": {
+        ".write": "auth != null"
+      },
+      "config": {
+        ".write": "auth != null",
+        "thresholdCm": {
+          ".validate": "newData.isNumber() && newData.val() >= 5 && newData.val() <= 100"
+        }
+      },
+      "alerts": {
+        ".indexOn": ["timestamp"]
+      }
+    }
+  }
+}

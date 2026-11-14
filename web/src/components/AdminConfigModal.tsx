@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { X, Save, AlertCircle, CheckCircle2, Loader2, Settings } from "lucide-react";
-import { AzureClient } from "../lib/azureClient";
 import { FirebaseClient } from "../lib/firebaseClient";
 import { DeviceConfig } from "../types";
 
@@ -29,24 +28,19 @@ export const AdminConfigModal: React.FC<AdminConfigModalProps> = ({
     setIsSaving(true);
     setMessage(null);
 
-    // 1. Cập nhật Hot Path: Firebase Realtime
-    FirebaseClient.updateConfig(Number(thresholdCm), Number(telemetryIntervalMs)).catch(() => {});
+    try {
+      // Cập nhật cấu hình ngưỡng lên Firebase Realtime Database
+      await FirebaseClient.updateConfig(Number(thresholdCm), Number(telemetryIntervalMs));
 
-    // 2. Cập nhật Cold Path: Azure Device Twin
-    const res = await AzureClient.updateAdminConfig({
-      thresholdCm: Number(thresholdCm),
-      telemetryIntervalMs: Number(telemetryIntervalMs)
-    });
-
-    setIsSaving(false);
-    if (res.success) {
-      setMessage({ type: "success", text: "Đã cập nhật Device Twin thành công! ESP32 sẽ tự động nhận qua MQTT." });
+      setMessage({ type: "success", text: "Đã cập nhật cấu hình thiết bị thành công (Firebase Realtime)!" });
       onConfigSaved({ thresholdCm: Number(thresholdCm), telemetryIntervalMs: Number(telemetryIntervalMs) });
       setTimeout(() => {
         onClose();
-      }, 1500);
-    } else {
-      setMessage({ type: "error", text: res.message || "Cập nhật cấu hình thất bại." });
+      }, 1200);
+    } catch (err: any) {
+      setMessage({ type: "error", text: err.message || "Cập nhật cấu hình thất bại." });
+    } finally {
+      setIsSaving(false);
     }
   };
 

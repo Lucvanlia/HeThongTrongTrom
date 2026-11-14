@@ -36,6 +36,8 @@ export interface DeviceConfig {
   telemetryIntervalMs: number;
 }
 
+export type ConnectionStatus = "CONNECTING" | "CONNECTED" | "DISCONNECTED" | "ERROR";
+
 export interface UserPrincipal {
   userId: string;
   userDetails: string;

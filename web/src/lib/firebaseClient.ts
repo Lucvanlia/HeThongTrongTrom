@@ -1,15 +1,39 @@
-import { ref, onValue, set, update, push, get } from "firebase/database";
-import { db } from "../firebase";
-import { TelemetryData, AlertItem, HistoryPoint, DeviceConfig } from "../types";
+import { ref, onValue, update, query, orderByChild, limitToLast } from "firebase/database";
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User } from "firebase/auth";
+import { db, auth } from "../firebase";
+import { TelemetryData, AlertItem, DeviceConfig } from "../types";
 
 export interface FirebaseControlState {
   armed: boolean;
   doorLocked: boolean;
   silenceAlarm: boolean;
+  cmdId?: number;
   lastUpdated?: number;
 }
 
 export class FirebaseClient {
+  /**
+   * Lắng nghe trạng thái đăng nhập Firebase Authentication
+   */
+  public static onAuthChanged(callback: (user: User | null) => void): () => void {
+    return onAuthStateChanged(auth, callback);
+  }
+
+  /**
+   * Đăng nhập Admin qua Email / Password
+   */
+  public static async login(email: string, pass: string): Promise<User> {
+    const res = await signInWithEmailAndPassword(auth, email, pass);
+    return res.user;
+  }
+
+  /**
+   * Đăng xuất khỏi hệ thống
+   */
+  public static async logout(): Promise<void> {
+    await signOut(auth);
+  }
+
   /**
    * Lắng nghe telemetry thời gian thực từ Firebase (/security/telemetry)
    */
@@ -20,7 +44,7 @@ export class FirebaseClient {
         const val = snapshot.val();
         callback({
           deviceId: val.deviceId || "esp32-chongtrom-01",
-          timestamp: val.timestamp || new Date().toISOString(),
+          timestamp: val.ts ? new Date(val.ts).toISOString() : (val.timestamp || new Date().toISOString()),
           distanceCm: typeof val.distanceCm === "number" ? val.distanceCm : -1,
           pirDetected: Boolean(val.pirDetected ?? val.pir),
           armed: Boolean(val.armed),
@@ -51,11 +75,11 @@ export class FirebaseClient {
   }
 
   /**
-   * Lắng nghe danh sách cảnh báo đột nhập (/security/alerts)
+   * Lắng nghe danh sách cảnh báo đột nhập (/security/alerts) với limitToLast(50)
    */
   public static subscribeAlerts(callback: (alerts: AlertItem[]) => void): () => void {
-    const alertsRef = ref(db, "security/alerts");
-    return onValue(alertsRef, (snapshot) => {
+    const alertsQuery = query(ref(db, "security/alerts"), orderByChild("timestamp"), limitToLast(50));
+    return onValue(alertsQuery, (snapshot) => {
       if (snapshot.exists()) {
         const val = snapshot.val();
         const items: AlertItem[] = [];
@@ -64,7 +88,7 @@ export class FirebaseClient {
           items.push({
             id: key,
             deviceId: a.deviceId || "esp32-chongtrom-01",
-            timestamp: a.timestamp || new Date().toISOString(),
+            timestamp: typeof a.timestamp === "number" ? new Date(a.timestamp).toISOString() : (a.timestamp || new Date().toISOString()),
             alertSource: a.sensor || a.alertSource || "PIR",
             distanceCm: a.distanceCm || 0,
             pirDetected: Boolean(a.pirDetected ?? a.pir),
@@ -81,7 +105,7 @@ export class FirebaseClient {
   }
 
   /**
-   * Lắng nghe hoặc lấy cấu hình thiết bị (/security/config)
+   * Lắng nghe cấu hình thiết bị (/security/config)
    */
   public static subscribeConfig(callback: (config: DeviceConfig) => void): () => void {
     const configRef = ref(db, "security/config");
@@ -89,32 +113,34 @@ export class FirebaseClient {
       if (snapshot.exists()) {
         const val = snapshot.val();
         callback({
-          thresholdCm: val.thresholdCm ?? 50,
-          telemetryIntervalMs: val.telemetryIntervalMs ?? 15000
+          thresholdCm: val.thresholdCm ?? 12,
+          telemetryIntervalMs: val.telemetryIntervalMs ?? 1000
         });
       }
     });
   }
 
   /**
-   * Gửi lệnh ARM / DISARM
+   * Gửi lệnh ARM / DISARM (kèm cmdId chống xung đột)
    */
   public static async setArmed(armed: boolean): Promise<void> {
     const controlRef = ref(db, "security/control");
     await update(controlRef, {
       armed,
       doorLocked: armed, // Khóa chốt khi ARM, mở khi DISARM
+      cmdId: Date.now(),
       lastUpdated: Date.now()
     });
   }
 
   /**
-   * Gửi lệnh Đóng / Mở khóa cửa (Servo 90° / 0°)
+   * Gửi lệnh Đóng / Mở khóa cửa (Servo 0° / 160°) (kèm cmdId chống xung đột)
    */
   public static async setLock(locked: boolean): Promise<void> {
     const controlRef = ref(db, "security/control");
     await update(controlRef, {
       doorLocked: locked,
+      cmdId: Date.now(),
       lastUpdated: Date.now()
     });
   }

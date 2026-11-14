@@ -32,7 +32,7 @@ namespace Config {
     // =========================================================================
     constexpr int SERVO_LOCK_ANGLE    = 0;    // 0 độ: Đóng chốt khóa an toàn
     constexpr int SERVO_UNLOCK_ANGLE  = 160;  // 160 độ: Mở toang chốt cửa dứt khoát
-    constexpr uint32_t SERVO_MOVE_TIME_MS = 450; // Chuyển động nhanh dứt khoát (450ms)
+    constexpr uint32_t SERVO_MOVE_TIME_MS = 550; // Chuyển động nhanh dứt khoát (550ms đủ cho góc 160 độ)
     constexpr int SERVO_MIN_US        = 600;  // Giới hạn xung tối thiểu (600µs chống kẹt ngàm cơ khí SG90)
     constexpr int SERVO_MAX_US        = 2400; // Giới hạn xung tối đa (2400µs đạt tới 160 độ)
 
@@ -77,6 +77,8 @@ namespace Config {
     constexpr const char* FB_PATH_STATUS     = "/security/status.json";
     constexpr const char* FB_PATH_CONTROL    = "/security/control.json";
     constexpr const char* FB_PATH_ALERTS     = "/security/alerts.json";
+    constexpr const char* FB_PATH_CONFIG     = "/security/config.json";
     constexpr uint32_t FB_STREAM_INTERVAL_MS = 1000;   // Đẩy telemetry lên Firebase mỗi 1 giây (Hot Path)
     constexpr uint32_t FB_POLL_CONTROL_MS    = 500;    // Đọc lệnh điều khiển từ Web mỗi 500ms
+    constexpr uint32_t FB_POLL_CONFIG_MS     = 5000;   // Đồng bộ cấu hình ngưỡng từ Web mỗi 5 giây
 }
