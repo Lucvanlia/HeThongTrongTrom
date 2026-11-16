@@ -5,6 +5,7 @@ import { TelemetryData } from "../types";
 
 interface ControlPanelProps {
   telemetry: TelemetryData | null;
+  userEmail?: string | null;
   onRefresh: () => void;
   onOpenSettings: () => void;
 }
@@ -15,7 +16,7 @@ interface PendingCommand {
   sentAt: number;
 }
 
-export const ControlPanel: React.FC<ControlPanelProps> = ({ telemetry, onRefresh, onOpenSettings }) => {
+export const ControlPanel: React.FC<ControlPanelProps> = ({ telemetry, userEmail, onRefresh, onOpenSettings }) => {
   const armed = telemetry?.armed ?? false;
   const doorLocked = telemetry?.doorLocked ?? false;
   const alarm = telemetry?.alarm ?? false;
@@ -38,7 +39,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ telemetry, onRefresh
 
     if (satisfied) {
       const elapsed = ((Date.now() - pendingCmd.sentAt) / 1000).toFixed(1);
-      setStatusMessage(`ESP32 đã thực thi thành công (${elapsed}s)!`);
+      setStatusMessage(`Thiết bị đã thực thi thành công (${elapsed}s)!`);
       setPendingCmd(null);
     }
   }, [telemetry, pendingCmd]);
@@ -47,7 +48,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ telemetry, onRefresh
   useEffect(() => {
     if (!pendingCmd) return;
     const timer = setTimeout(() => {
-      setStatusMessage("Cảnh báo: Quá 8s thiết bị chưa phản hồi (hãy kiểm tra nguồn/Wi-Fi ESP32)!");
+      setStatusMessage("Cảnh báo: Quá 8s thiết bị chưa phản hồi (hãy kiểm tra nguồn/kết nối mạng)!");
       setPendingCmd(null);
     }, 8000);
     return () => clearTimeout(timer);
@@ -60,15 +61,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ telemetry, onRefresh
 
     const target = payload?.armed ?? payload?.locked;
     setPendingCmd({ type: command, targetValue: target, sentAt: Date.now() });
-    setStatusMessage("Đang gửi lệnh tới ESP32 qua Firebase...");
+    setStatusMessage("Đang truyền lệnh tới thiết bị...");
+
+    const actor = userEmail || "Quản trị viên";
 
     try {
       if (command === "setArm") {
-        await FirebaseClient.setArmed(target ?? true);
+        await FirebaseClient.setArmed(target ?? true, actor);
       } else if (command === "setLock") {
-        await FirebaseClient.setLock(target ?? true);
+        await FirebaseClient.setLock(target ?? true, actor);
       } else if (command === "silenceAlarm") {
-        await FirebaseClient.silenceAlarm();
+        await FirebaseClient.silenceAlarm(actor);
       }
     } catch (err: any) {
       setStatusMessage(`Lỗi: ${err.message}`);
@@ -82,7 +85,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ telemetry, onRefresh
         <div>
           <h3 style={{ fontSize: "1.1rem", fontWeight: 700 }}>Bảng Điều Khiển Thiết Bị</h3>
           <p style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-            Điều khiển Realtime (Đóng vòng lặp: Tự động mở khóa khi ESP32 xác nhận trạng thái)
+            Điều khiển Realtime (Đóng vòng lặp: Tự động mở khóa khi thiết bị xác nhận trạng thái)
           </p>
         </div>
 
@@ -118,38 +121,27 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ telemetry, onRefresh
         {alarm && (
           <button
             className="btn btn-danger"
-            onClick={() => handleCommand("silenceAlarm", {})}
+            onClick={() => handleCommand("silenceAlarm")}
             disabled={isPending}
+            style={{ animation: "pulse-red 1.5s infinite" }}
           >
             {isPending && pendingCmd?.type === "silenceAlarm" ? <Loader2 size={18} className="animate-spin" /> : <VolumeX size={18} />}
-            <span>TẮT CÒI NGAY</span>
+            <span>TẮT CÒI BÁO ĐỘNG</span>
           </button>
         )}
 
-        {/* Nút Làm Mới */}
-        <button
-          className="btn btn-outline"
-          onClick={onRefresh}
-          disabled={isPending}
-          style={{ marginLeft: "auto" }}
-          title="Làm mới trạng thái và lịch sử"
-        >
-          <RefreshCw size={16} />
-          <span>Làm Mới</span>
-        </button>
-
-        {/* Nút Mở Cài Đặt Ngưỡng */}
-        <button
-          className="btn btn-outline"
-          onClick={onOpenSettings}
-          disabled={isPending}
-          title="Cấu hình ngưỡng khoảng cách an ninh"
-        >
-          <Settings size={16} />
-          <span>Cấu Hình</span>
-        </button>
+        {/* Nút Làm mới & Cài đặt cấu hình */}
+        <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
+          <button onClick={onRefresh} className="btn btn-outline" title="Làm mới trạng thái">
+            <RefreshCw size={16} />
+            <span>Làm Mới</span>
+          </button>
+          <button onClick={onOpenSettings} className="btn btn-outline" title="Cài đặt cấu hình & Hẹn giờ">
+            <Settings size={16} />
+            <span>Cấu Hình</span>
+          </button>
+        </div>
       </div>
     </div>
   );
 };
-

@@ -26,6 +26,7 @@ scripts/azure_credentials.json
 node_modules/
 dist/
 build/
+.firebase/
 *.log
 *.tsbuildinfo
 

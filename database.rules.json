@@ -20,6 +20,17 @@
         },
         "lastUpdated": { ".validate": "newData.isNumber()" }
       },
+      "schedule": {
+        ".write": "auth != null",
+        "enabled": { ".validate": "newData.isBoolean()" },
+        "armTime": { ".validate": "newData.isString()" },
+        "disarmTime": { ".validate": "newData.isString()" },
+        "lastUpdated": { ".validate": "newData.isNumber()" }
+      },
+      "auditLogs": {
+        ".write": "auth != null",
+        ".indexOn": ["timestamp"]
+      },
       "alerts": {
         ".indexOn": ["timestamp"]
       }

@@ -36,6 +36,21 @@ export interface DeviceConfig {
   telemetryIntervalMs: number;
 }
 
+export interface ScheduleConfig {
+  enabled: boolean;
+  armTime: string;      // ví dụ "22:00"
+  disarmTime: string;   // ví dụ "06:00"
+  lastUpdated?: number;
+}
+
+export interface AuditLogItem {
+  id: string;
+  timestamp: string;
+  userEmail: string;
+  action: "ARM" | "DISARM" | "LOCK_DOOR" | "UNLOCK_DOOR" | "SILENCE_ALARM" | "UPDATE_CONFIG" | "UPDATE_SCHEDULE";
+  detail: string;
+}
+
 export type ConnectionStatus = "CONNECTING" | "CONNECTED" | "DISCONNECTED" | "ERROR";
 
 export interface UserPrincipal {
@@ -44,4 +59,3 @@ export interface UserPrincipal {
   identityProvider: string;
   userRoles: string[];
 }
-

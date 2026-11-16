@@ -58,7 +58,7 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </div>
             <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "2px" }}>
-              Dual-Core ESP32 • Firebase Realtime Database • Smart Servo Lock
+              Giám Sát An Ninh Trực Tuyến • Chốt Khóa Tự Động • Báo Động Đa Tầng
             </p>
           </div>
         </div>

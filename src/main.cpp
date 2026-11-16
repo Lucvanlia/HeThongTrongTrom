@@ -428,19 +428,27 @@ static void sendFirebaseTelemetry(HTTPClient& http, const SharedState& s, uint32
     http.addHeader("Content-Type", "application/json");
 
     JsonDocument doc;
+    doc["deviceId"]    = DEVICE_ID;
     doc["armed"]       = s.armed;
     doc["doorLocked"]  = s.doorLocked;
     doc["alarm"]       = s.alarm;
     doc["pir"]         = s.pir;
     doc["distanceCm"]  = (s.distanceCm < 0) ? -1.0f : roundf(s.distanceCm * 10) / 10.0f;
     doc["thresholdCm"] = s.thresholdCm;
+    doc["ip"]          = WiFi.localIP().toString();
     doc["rssi"]        = WiFi.RSSI();
     doc["uptimeS"]     = now / 1000;
     doc["ts"]          = getEpochMs();
 
     String body;
     serializeJson(doc, body);
-    http.PUT(body);
+    int code = http.PUT(body);
+    if (code > 0) {
+        Serial.printf("[FIREBASE-CORE0] Gui Telemetry thanh cong (HTTP %d), Dist: %.1f cm, IP: %s\n", 
+                      code, s.distanceCm, WiFi.localIP().toString().c_str());
+    } else {
+        Serial.printf("[FIREBASE-CORE0] Gui Telemetry that bai: %s\n", http.errorToString(code).c_str());
+    }
     http.end(); // Với setReuse(true), giữ nguyên kết nối Keep-Alive để tiết kiệm băng thông TLS
 }
 
@@ -575,14 +583,20 @@ static void networkTask(void* pvParameters) {
         const uint32_t now = millis();
 
         // 1. Quản lý kết nối Wi-Fi
+        static bool wifiLogged = false;
         if (WiFi.status() != WL_CONNECTED) {
+            wifiLogged = false;
             if (now - lastWifiRetry >= Config::WIFI_RETRY_MS) {
                 lastWifiRetry = now;
-                Serial.println("[WIFI-CORE0] Dang thu ket noi lai Wi-Fi...");
+                Serial.printf("[WIFI-CORE0] Dang ket noi Wi-Fi '%s'...\n", WIFI_SSID);
                 WiFi.reconnect();
             }
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
+        } else if (!wifiLogged) {
+            wifiLogged = true;
+            Serial.printf("[WIFI-CORE0] DA KET NOI WI-FI THANH CONG! IP: %s | RSSI: %d dBm\n",
+                          WiFi.localIP().toString().c_str(), WiFi.RSSI());
         }
 
         // 2. Gửi sự kiện cảnh báo khẩn cấp từ Core 1 lên Firebase ngay lập tức
