@@ -78,7 +78,8 @@ namespace Config {
     constexpr const char* FB_PATH_CONTROL    = "/security/control.json";
     constexpr const char* FB_PATH_ALERTS     = "/security/alerts.json";
     constexpr const char* FB_PATH_CONFIG     = "/security/config.json";
-    constexpr uint32_t FB_STREAM_INTERVAL_MS = 1000;   // Đẩy telemetry lên Firebase mỗi 1 giây (Hot Path)
+    constexpr uint32_t FB_STREAM_INTERVAL_MS = 1000;   // Chu kỳ kiểm tra thay đổi trạng thái đẩy lên Firebase (1s)
+    constexpr uint32_t FB_HEARTBEAT_MS       = 5000;   // Chu kỳ gửi nhịp tim định kỳ khi trạng thái đứng yên (5s)
     constexpr uint32_t FB_POLL_CONTROL_MS    = 500;    // Đọc lệnh điều khiển từ Web mỗi 500ms
     constexpr uint32_t FB_POLL_CONFIG_MS     = 5000;   // Đồng bộ cấu hình ngưỡng từ Web mỗi 5 giây
 }

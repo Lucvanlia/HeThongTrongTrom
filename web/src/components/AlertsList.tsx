@@ -1,6 +1,6 @@
 import React from "react";
 import { AlertItem } from "../types";
-import { AlertTriangle, Clock, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Clock, ShieldAlert, CheckCircle2 } from "lucide-react";
 
 interface AlertsListProps {
   alerts: AlertItem[];
@@ -9,14 +9,26 @@ interface AlertsListProps {
 export const AlertsList: React.FC<AlertsListProps> = ({ alerts }) => {
   return (
     <div className="glass-panel" style={{ padding: "20px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <ShieldAlert size={18} color="var(--rose-accent)" />
           <h3 style={{ fontSize: "1.05rem", fontWeight: 700 }}>Nhật Ký Cảnh Báo Đột Nhập</h3>
         </div>
-        <span className="badge badge-red" style={{ fontSize: "0.7rem" }}>
-          {alerts.length} Sự Cố
-        </span>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span
+            className="badge badge-slate"
+            style={{ fontSize: "0.7rem", display: "flex", alignItems: "center", gap: "5px" }}
+            title="Tự động sao lưu định kỳ lúc 01:00 sáng mỗi đêm lên Azure Blob Storage qua GitHub Actions"
+          >
+            <CheckCircle2 size={12} color="var(--cyan-accent)" />
+            <span>Auto-Backup Azure 01:00</span>
+          </span>
+
+          <span className="badge badge-red" style={{ fontSize: "0.7rem" }}>
+            {alerts.length} Sự Cố
+          </span>
+        </div>
       </div>
 
       {alerts.length === 0 ? (
@@ -75,4 +87,3 @@ export const AlertsList: React.FC<AlertsListProps> = ({ alerts }) => {
     </div>
   );
 };
-

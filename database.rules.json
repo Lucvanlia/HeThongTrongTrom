@@ -3,13 +3,22 @@
     "security": {
       ".read": "auth != null",
       "control": {
-        ".write": "auth != null"
+        ".write": "auth != null",
+        "armed": { ".validate": "newData.isBoolean()" },
+        "doorLocked": { ".validate": "newData.isBoolean()" },
+        "silenceAlarm": { ".validate": "newData.isBoolean()" },
+        "cmdId": { ".validate": "newData.isNumber()" },
+        "lastUpdated": { ".validate": "newData.isNumber()" }
       },
       "config": {
         ".write": "auth != null",
         "thresholdCm": {
           ".validate": "newData.isNumber() && newData.val() >= 5 && newData.val() <= 100"
-        }
+        },
+        "telemetryIntervalMs": {
+          ".validate": "newData.isNumber() && newData.val() >= 500 && newData.val() <= 60000"
+        },
+        "lastUpdated": { ".validate": "newData.isNumber()" }
       },
       "alerts": {
         ".indexOn": ["timestamp"]

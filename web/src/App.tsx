@@ -8,6 +8,9 @@ import { AdminConfigModal } from "./components/AdminConfigModal";
 import { LoginModal } from "./components/LoginModal";
 import { FirebaseClient } from "./lib/firebaseClient";
 import { TelemetryData, HistoryPoint, AlertItem, DeviceConfig, ConnectionStatus } from "./types";
+import { Lock } from "lucide-react";
+
+const OFFLINE_TIMEOUT_S = 15; // Ngưỡng phát hiện mất kết nối 15 giây (chống báo OFFLINE giả khi mạng trễ)
 
 export const App: React.FC = () => {
   const [telemetry, setTelemetry] = useState<TelemetryData | null>(null);
@@ -31,14 +34,24 @@ export const App: React.FC = () => {
         setIsLoginOpen(false);
       } else {
         setUserEmail(null);
+        setWsStatus("DISCONNECTED");
       }
     });
 
     return () => unsubAuth();
   }, []);
 
-  // 2. Lắng nghe dữ liệu Realtime từ Firebase Realtime Database
+  // 2. Chỉ mở kết nối lắng nghe dữ liệu từ Firebase RTDB sau khi Admin đã xác thực
   useEffect(() => {
+    if (!userEmail) {
+      setTelemetry(null);
+      setAlerts([]);
+      setSecondsAgo(null);
+      return;
+    }
+
+    setWsStatus("CONNECTING");
+
     // A. Lắng nghe luồng Telemetry
     const unsubTelemetry = FirebaseClient.subscribeTelemetry((newData) => {
       lastArrivalRef.current = Date.now();
@@ -82,29 +95,36 @@ export const App: React.FC = () => {
       unsubAlerts();
       unsubConfig();
     };
-  }, []);
+  }, [userEmail]);
 
   // 3. Bộ đếm nhịp tim (Heartbeat Ticker): Đếm số giây kể từ lần cuối nhận telemetry
   useEffect(() => {
+    if (!userEmail) return;
+
     const interval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - lastArrivalRef.current) / 1000);
       setSecondsAgo(elapsed);
 
-      // Nếu quá 8 giây không có tin mới từ ESP32 -> đánh dấu OFFLINE
-      if (elapsed > 8) {
+      // Nếu quá 15 giây không có tin mới từ ESP32 -> đánh dấu OFFLINE
+      if (elapsed > OFFLINE_TIMEOUT_S) {
         setTelemetry((prev) => prev ? { ...prev, status: "OFFLINE" } : null);
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [userEmail]);
 
   const handleLogout = async () => {
     await FirebaseClient.logout();
     setUserEmail(null);
   };
 
-  const deviceOnline = telemetry?.status !== "OFFLINE" && (secondsAgo === null || secondsAgo <= 8);
+  const deviceOnline = Boolean(
+    userEmail &&
+    telemetry &&
+    telemetry.status !== "OFFLINE" &&
+    (secondsAgo === null || secondsAgo <= OFFLINE_TIMEOUT_S)
+  );
   const hasAlarm = telemetry?.alarm === true;
 
   return (
@@ -119,6 +139,38 @@ export const App: React.FC = () => {
         onOpenLogin={() => setIsLoginOpen(true)}
         onLogout={handleLogout}
       />
+
+      {/* Thông báo yêu cầu đăng nhập nếu chưa xác thực */}
+      {!userEmail && (
+        <div
+          className="glass-panel"
+          style={{
+            padding: "16px 20px",
+            marginBottom: "24px",
+            border: "1px solid rgba(56, 189, 248, 0.35)",
+            background: "rgba(56, 189, 248, 0.08)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "12px"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <Lock size={18} color="var(--cyan-accent)" />
+            <span style={{ fontSize: "0.9rem", color: "var(--text-primary)" }}>
+              Hệ thống được bảo vệ bởi <strong>Firebase Security Rules</strong>. Vui lòng đăng nhập tài khoản Quản trị viên để xem luồng cảm biến và điều khiển.
+            </span>
+          </div>
+          <button
+            onClick={() => setIsLoginOpen(true)}
+            className="btn btn-primary"
+            style={{ padding: "8px 16px", fontSize: "0.85rem" }}
+          >
+            Đăng Nhập Ngay
+          </button>
+        </div>
+      )}
 
       {/* 2. Thẻ KPI đo đạc cảm biến thời gian thực */}
       <KpiCards

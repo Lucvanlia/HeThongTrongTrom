@@ -1,0 +1,21 @@
+name: backup-alerts
+
+on:
+  schedule:
+    - cron: "0 18 * * *" # Chay tu dong luc 01:00 sang gio Viet Nam (UTC+7) moi dem
+  workflow_dispatch:     # Cho phep bam chay thu cong tren giao dien GitHub Actions
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch alerts from Firebase & Upload to Azure Blob Storage
+        run: |
+          curl -sf "https://${{ secrets.FIREBASE_HOST }}/security/alerts.json?auth=${{ secrets.FIREBASE_AUTH }}" -o alerts.json
+          F="backup_$(date -u +%Y%m%d_%H%M%S).json"
+          curl -sf -X PUT \
+            -H "x-ms-blob-type: BlockBlob" \
+            -H "Content-Type: application/json" \
+            --data-binary @alerts.json \
+            "${{ secrets.AZURE_BLOB_URL }}/$F?${{ secrets.AZURE_SAS }}"
+          echo "Successfully backed up $F to Azure Blob Storage"

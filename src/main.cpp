@@ -418,11 +418,11 @@ static void alarmOutputTask(void* pvParameters) {
 // 5. CORE 0: MẠNG WI-FI, FIREBASE REALTIME DATABASE (Priority 1)
 // Quản lý TLS an toàn, chống cạn kiệt Heap RAM
 // ============================================================================
-static void sendFirebaseTelemetry(const SharedState& s, uint32_t now) {
+static void sendFirebaseTelemetry(HTTPClient& http, const SharedState& s, uint32_t now) {
     if (WiFi.status() != WL_CONNECTED) return;
 
-    HTTPClient http;
-    http.setTimeout(2500); // Đặt timeout 2.5s chống nghẽn mạng
+    http.setReuse(true);
+    http.setTimeout(3000); // Đặt timeout 3s chống nghẽn mạng và tái sử dụng TLS session
     const String url = String("https://") + FIREBASE_HOST + FB_PATH_TELEMETRY + "?auth=" + FIREBASE_AUTH;
     http.begin(tlsClient, url);
     http.addHeader("Content-Type", "application/json");
@@ -441,14 +441,14 @@ static void sendFirebaseTelemetry(const SharedState& s, uint32_t now) {
     String body;
     serializeJson(doc, body);
     http.PUT(body);
-    http.end(); // Giải phóng socket ngay lập tức
+    http.end(); // Với setReuse(true), giữ nguyên kết nối Keep-Alive để tiết kiệm băng thông TLS
 }
 
-static void pollFirebaseControl() {
+static void pollFirebaseControl(HTTPClient& http) {
     if (WiFi.status() != WL_CONNECTED) return;
 
-    HTTPClient http;
-    http.setTimeout(2500);
+    http.setReuse(true);
+    http.setTimeout(3000);
     const String url = String("https://") + FIREBASE_HOST + FB_PATH_CONTROL + "?auth=" + FIREBASE_AUTH;
     http.begin(tlsClient, url);
     int httpCode = http.GET();
@@ -489,24 +489,25 @@ static void pollFirebaseControl() {
             }
         }
     }
-    http.end(); // BẮT BUỘC ĐÓNG KẾT NỐI GET TRƯỚC KHI MỞ KẾT NỐI PATCH (Tránh mở 2 kết nối TLS cùng lúc ngốn RAM)
+    http.end();
 
     if (needSilence) {
         silenceAlarm();
-        HTTPClient patchHttp;
-        patchHttp.setTimeout(2500);
+        http.setReuse(true);
+        http.setTimeout(3000);
         const String patchUrl = String("https://") + FIREBASE_HOST + FB_PATH_CONTROL + "?auth=" + FIREBASE_AUTH;
-        patchHttp.begin(tlsClient, patchUrl);
-        patchHttp.PATCH("{\"silenceAlarm\":false}");
-        patchHttp.end();
+        http.begin(tlsClient, patchUrl);
+        http.addHeader("Content-Type", "application/json");
+        http.PATCH("{\"silenceAlarm\":false}");
+        http.end();
     }
 }
 
-static void pollFirebaseConfig() {
+static void pollFirebaseConfig(HTTPClient& http) {
     if (WiFi.status() != WL_CONNECTED) return;
 
-    HTTPClient http;
-    http.setTimeout(2500);
+    http.setReuse(true);
+    http.setTimeout(3000);
     const String url = String("https://") + FIREBASE_HOST + FB_PATH_CONFIG + "?auth=" + FIREBASE_AUTH;
     http.begin(tlsClient, url);
     int httpCode = http.GET();
@@ -527,11 +528,11 @@ static void pollFirebaseConfig() {
     http.end();
 }
 
-static void sendFirebaseAlert(const AlertEvent& ev) {
+static void sendFirebaseAlert(HTTPClient& http, const AlertEvent& ev) {
     if (WiFi.status() != WL_CONNECTED) return;
 
-    HTTPClient http;
-    http.setTimeout(2500);
+    http.setReuse(true);
+    http.setTimeout(3000);
     const String url = String("https://") + FIREBASE_HOST + FB_PATH_ALERTS + "?auth=" + FIREBASE_AUTH;
     http.begin(tlsClient, url);
     http.addHeader("Content-Type", "application/json");
@@ -554,13 +555,21 @@ static void networkTask(void* pvParameters) {
     WiFi.setAutoReconnect(true);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
 
-    tlsClient.setInsecure(); // Tiết kiệm RAM
+    tlsClient.setInsecure(); // Tiết kiệm RAM trên ESP32, kết hợp HTTP Keep-Alive (setReuse)
     configTime(7 * 3600, 0, "pool.ntp.org", "time.google.com");
 
+    HTTPClient fbHttp;
+    fbHttp.setReuse(true);
+    fbHttp.setTimeout(3000);
+
     uint32_t lastWifiRetry      = 0;
-    uint32_t lastFbTelemetry    = 0;
+    uint32_t lastFbCheck        = 0;
+    uint32_t lastFbSent         = 0;
     uint32_t lastFbPollControl  = 0;
     uint32_t lastFbPollConfig   = 0;
+
+    SharedState lastSentState   = {};
+    bool        firstTelemetry  = true;
 
     for (;;) {
         const uint32_t now = millis();
@@ -579,27 +588,40 @@ static void networkTask(void* pvParameters) {
         // 2. Gửi sự kiện cảnh báo khẩn cấp từ Core 1 lên Firebase ngay lập tức
         AlertEvent ev;
         while (xQueueReceive(alertQueue, &ev, 0) == pdTRUE) {
-            sendFirebaseAlert(ev);
+            sendFirebaseAlert(fbHttp, ev);
             Serial.printf("[FIREBASE-CORE0] Da gui canh bao dot nhap [%s] len Cloud Realtime!\n", ev.sensor);
         }
 
-        // 3. Đẩy Telemetry lên Firebase Realtime Database mỗi 1 giây
-        if (now - lastFbTelemetry >= Config::FB_STREAM_INTERVAL_MS) {
-            lastFbTelemetry = now;
+        // 3. Đẩy Telemetry thông minh: Gửi ngay khi có biến động trạng thái (1s) hoặc nhịp tim định kỳ (5s)
+        if (now - lastFbCheck >= Config::FB_STREAM_INTERVAL_MS) {
+            lastFbCheck = now;
             const SharedState s = snapshot();
-            sendFirebaseTelemetry(s, now);
+            const bool stateChanged = firstTelemetry ||
+                (s.armed != lastSentState.armed) ||
+                (s.doorLocked != lastSentState.doorLocked) ||
+                (s.alarm != lastSentState.alarm) ||
+                (s.pir != lastSentState.pir) ||
+                (s.thresholdCm != lastSentState.thresholdCm) ||
+                (fabsf(s.distanceCm - lastSentState.distanceCm) >= 1.0f);
+
+            if (stateChanged || (now - lastFbSent >= Config::FB_HEARTBEAT_MS)) {
+                sendFirebaseTelemetry(fbHttp, s, now);
+                lastSentState  = s;
+                lastFbSent     = now;
+                firstTelemetry = false;
+            }
         }
 
         // 4. Đọc lệnh điều khiển từ Web qua Firebase mỗi 500ms
         if (now - lastFbPollControl >= Config::FB_POLL_CONTROL_MS) {
             lastFbPollControl = now;
-            pollFirebaseControl();
+            pollFirebaseControl(fbHttp);
         }
 
         // 5. Đồng bộ cấu hình ngưỡng từ Web mỗi 5 giây
         if (now - lastFbPollConfig >= Config::FB_POLL_CONFIG_MS) {
             lastFbPollConfig = now;
-            pollFirebaseConfig();
+            pollFirebaseConfig(fbHttp);
         }
 
         vTaskDelay(pdMS_TO_TICKS(50));
