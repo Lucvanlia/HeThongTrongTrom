@@ -1,5 +1,5 @@
 import React from "react";
-import { Shield, ShieldAlert, Wifi, WifiOff, LogIn, LogOut, User, Activity } from "lucide-react";
+import { Shield, ShieldAlert, Wifi, WifiOff, LogIn, LogOut, User, Activity, Bell, BellOff } from "lucide-react";
 import { ConnectionStatus } from "../types";
 
 interface HeaderProps {
@@ -8,6 +8,8 @@ interface HeaderProps {
   userEmail: string | null;
   hasAlarm: boolean;
   secondsSinceLastHeartbeat: number | null;
+  isMuted?: boolean;
+  onToggleMute?: () => void;
   onOpenLogin: () => void;
   onLogout: () => void;
 }
@@ -18,6 +20,8 @@ export const Header: React.FC<HeaderProps> = ({
   userEmail,
   hasAlarm,
   secondsSinceLastHeartbeat,
+  isMuted = false,
+  onToggleMute,
   onOpenLogin,
   onLogout
 }) => {
@@ -49,14 +53,9 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <h1 style={{ fontSize: "1.25rem", fontWeight: 800, letterSpacing: "-0.02em" }}>
-                HỆ THỐNG AN NINH & BÁO ĐỘNG ĐỘT NHẬP
-              </h1>
-              <span className="badge badge-cyan" style={{ fontSize: "0.65rem" }}>
-                CLOUD REALTIME
-              </span>
-            </div>
+            <h1 style={{ fontSize: "1.25rem", fontWeight: 800, letterSpacing: "-0.02em" }}>
+              HỆ THỐNG AN NINH & BÁO ĐỘNG ĐỘT NHẬP
+            </h1>
             <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "2px" }}>
               Giám Sát An Ninh Trực Tuyến • Chốt Khóa Tự Động • Báo Động Đa Tầng
             </p>
@@ -64,7 +63,20 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Status Indicators & Auth */}
-        <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+          {/* Mute / Unmute Chime Sound */}
+          {onToggleMute && (
+            <button
+              onClick={onToggleMute}
+              className="btn btn-outline"
+              style={{ padding: "6px 10px", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "6px" }}
+              title={isMuted ? "Đang tắt chuông báo (Bấm để bật)" : "Đang bật chuông báo (Bấm để tắt)"}
+            >
+              {isMuted ? <BellOff size={15} color="var(--rose-accent)" /> : <Bell size={15} color="var(--emerald-accent)" />}
+              <span>{isMuted ? "Tắt Chuông" : "Bật Chuông"}</span>
+            </button>
+          )}
+
           {/* Live Status Badge */}
           <div className={`badge ${wsStatus === "CONNECTED" ? "badge-green" : wsStatus === "CONNECTING" ? "badge-amber" : "badge-red"}`}>
             <Activity size={14} />
@@ -78,7 +90,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Device Online/Offline Status */}
           <div className={`badge ${deviceOnline ? "badge-green" : "badge-slate"}`}>
             {deviceOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
-            <span>ESP32: {deviceOnline ? "ONLINE" : "OFFLINE"}</span>
+            <span>THIẾT BỊ: {deviceOnline ? "ONLINE" : "OFFLINE"}</span>
           </div>
 
           {/* User Profile / Auth State */}
@@ -108,4 +120,3 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
-

@@ -6,6 +6,7 @@ import { DistanceChart } from "./components/DistanceChart";
 import { AlertsList } from "./components/AlertsList";
 import { AdminConfigModal } from "./components/AdminConfigModal";
 import { LoginModal } from "./components/LoginModal";
+import { MotionAlertPopup } from "./components/MotionAlertPopup";
 import { FirebaseClient } from "./lib/firebaseClient";
 import { TelemetryData, HistoryPoint, AlertItem, AuditLogItem, DeviceConfig, ScheduleConfig, ConnectionStatus } from "./types";
 import { Lock } from "lucide-react";
@@ -24,6 +25,7 @@ export const App: React.FC = () => {
   const [isConfigOpen, setIsConfigOpen] = useState<boolean>(false);
   const [isLoginOpen, setIsLoginOpen] = useState<boolean>(false);
   const [secondsAgo, setSecondsAgo] = useState<number | null>(null);
+  const [isMuted, setIsMuted] = useState<boolean>(false);
 
   // Mốc thời gian nhận gói tin telemetry gần nhất (dùng để phát hiện Offline chính xác)
   const lastArrivalRef = useRef<number>(Date.now());
@@ -174,6 +176,8 @@ export const App: React.FC = () => {
         userEmail={userEmail}
         hasAlarm={hasAlarm}
         secondsSinceLastHeartbeat={secondsAgo}
+        isMuted={isMuted}
+        onToggleMute={() => setIsMuted((prev) => !prev)}
         onOpenLogin={() => setIsLoginOpen(true)}
         onLogout={handleLogout}
       />
@@ -252,6 +256,12 @@ export const App: React.FC = () => {
         isOpen={isLoginOpen}
         onClose={() => setIsLoginOpen(false)}
         onLoginSuccess={(email) => setUserEmail(email)}
+      />
+
+      {/* 7. Popup Toast Cảnh Báo Có Người Đi Ngang / Đột Nhập (Kèm âm thanh Ding-Dong) */}
+      <MotionAlertPopup
+        telemetry={telemetry}
+        isMuted={isMuted}
       />
 
       {/* Footer */}

@@ -95,7 +95,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
           </div>
           <h2 style={{ fontSize: "1.25rem", fontWeight: 700 }}>Đăng Nhập Quản Trị Viên</h2>
           <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "4px" }}>
-            Xác thực Firebase Authentication để mở khóa quyền giám sát và điều khiển
+            Xác thực Quản trị viên để mở khóa quyền giám sát và điều khiển
           </p>
         </div>
 
@@ -182,7 +182,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
         </form>
 
         <p style={{ textAlign: "center", fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "16px" }}>
-          Tài khoản được cấp quyền bởi quản trị viên qua Firebase Authentication
+          Tài khoản được phân quyền bởi hệ thống quản trị an ninh trung tâm
         </p>
       </div>
     </div>

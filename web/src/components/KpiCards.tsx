@@ -170,7 +170,7 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ telemetry, thresholdCm }) =>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontWeight: 600, textTransform: "uppercase" }}>
-              Phần Cứng ESP32
+              Thiết Bị Trung Tâm
             </span>
             <div style={{ marginTop: "8px" }}>
               <div className="font-mono" style={{ fontSize: "1rem", fontWeight: 600 }}>
@@ -181,7 +181,7 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ telemetry, thresholdCm }) =>
               </div>
             </div>
             <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>
-              ID: {telemetry?.deviceId || "esp32_device_01"}
+              ID: {telemetry?.deviceId || "device_node_01"}
             </p>
           </div>
           <div style={{
