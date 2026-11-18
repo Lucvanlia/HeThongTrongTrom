@@ -1,7 +1,49 @@
 import { db, auth } from "../firebase";
-import { ref, onValue, update, push, query, orderByChild, limitToLast } from "firebase/database";
+import { 
+  ref, 
+  onValue, 
+  update, 
+  push, 
+  query, 
+  orderByChild, 
+  orderByKey,
+  startAt,
+  endAt,
+  limitToLast, 
+  runTransaction,
+  get
+} from "firebase/database";
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User } from "firebase/auth";
-import { TelemetryData, AlertItem, DeviceConfig, AuditLogItem, ScheduleConfig } from "../types";
+import { 
+  TelemetryData, 
+  AlertItem, 
+  DeviceConfig, 
+  AuditLogItem, 
+  ScheduleConfig,
+  DailyStatsMap,
+  DailyStatNode
+} from "../types";
+
+export function getVietnamDateKey(ts: number | Date = Date.now()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(typeof ts === "number" ? new Date(ts) : ts);
+}
+
+export function getVietnamHourKey(ts: number | Date = Date.now()): string {
+  const dateObj = typeof ts === "number" ? new Date(ts) : ts;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    hour: "numeric",
+    hourCycle: "h23"
+  }).formatToParts(dateObj);
+  const hourPart = parts.find((p) => p.type === "hour");
+  const h = hourPart ? parseInt(hourPart.value, 10) : dateObj.getHours();
+  return String(h).padStart(2, "0");
+}
 
 export class FirebaseClient {
   /**
@@ -90,7 +132,6 @@ export class FirebaseClient {
             doorLocked: Boolean(a.doorLocked)
           });
         });
-        // Sắp xếp mới nhất lên đầu
         items.sort((x, y) => new Date(y.timestamp).getTime() - new Date(x.timestamp).getTime());
         callback(items);
       } else {
@@ -200,7 +241,7 @@ export class FirebaseClient {
     const controlRef = ref(db, "security/control");
     await update(controlRef, {
       armed,
-      doorLocked: armed, // Khóa chốt khi ARM, mở khi DISARM
+      doorLocked: armed,
       cmdId: Date.now(),
       lastUpdated: Date.now()
     });
@@ -251,5 +292,111 @@ export class FirebaseClient {
     if (userEmail) {
       await this.logAudit(userEmail, "UPDATE_CONFIG", `Cập nhật ngưỡng cự ly an ninh: ${thresholdCm} cm`);
     }
+  }
+
+  /**
+   * Tăng bộ đếm tổng hợp theo ngày/giờ bằng transaction()
+   * stats/daily/{YYYY-MM-DD}/total: { passby, alert, pir, sonar, both }
+   * stats/daily/{YYYY-MM-DD}/hours/{00..23}: { passby, alert }
+   */
+  public static async recordDailyEvent(
+    type: "passby" | "alert",
+    sensor: "PIR" | "SONAR" | "BOTH" = "PIR",
+    timestamp: number = Date.now()
+  ): Promise<void> {
+    const dateKey = getVietnamDateKey(timestamp);
+    const hourKey = getVietnamHourKey(timestamp);
+    const statRef = ref(db, `stats/daily/${dateKey}`);
+
+    try {
+      await runTransaction(statRef, (currentData) => {
+        const data: DailyStatNode = currentData || {
+          total: { passby: 0, alert: 0, pir: 0, sonar: 0, both: 0 },
+          hours: {}
+        };
+
+        if (!data.total) {
+          data.total = { passby: 0, alert: 0, pir: 0, sonar: 0, both: 0 };
+        }
+        if (!data.hours) {
+          data.hours = {};
+        }
+        if (!data.hours[hourKey]) {
+          data.hours[hourKey] = { passby: 0, alert: 0 };
+        }
+
+        if (type === "passby") {
+          data.total.passby = (data.total.passby || 0) + 1;
+          data.hours[hourKey].passby = (data.hours[hourKey].passby || 0) + 1;
+        } else {
+          data.total.alert = (data.total.alert || 0) + 1;
+          data.hours[hourKey].alert = (data.hours[hourKey].alert || 0) + 1;
+        }
+
+        if (sensor === "PIR") {
+          data.total.pir = (data.total.pir || 0) + 1;
+        } else if (sensor === "SONAR") {
+          data.total.sonar = (data.total.sonar || 0) + 1;
+        } else if (sensor === "BOTH") {
+          data.total.both = (data.total.both || 0) + 1;
+        }
+
+        return data;
+      });
+    } catch (e) {
+      console.warn("Lỗi cập nhật stats transaction:", e);
+    }
+  }
+
+  /**
+   * Lắng nghe dữ liệu thống kê theo khoảng ngày bằng orderByKey().startAt().endAt()
+   * Chỉ tải đúng các node ngày trong khoảng chọn, không tải toàn bộ database.
+   */
+  public static subscribeDailyStatsRange(
+    startKey: string,
+    endKey: string,
+    callback: (data: DailyStatsMap) => void
+  ): () => void {
+    const statsQuery = query(
+      ref(db, "stats/daily"),
+      orderByKey(),
+      startAt(startKey),
+      endAt(endKey)
+    );
+    return onValue(statsQuery, (snapshot) => {
+      if (snapshot.exists()) {
+        callback(snapshot.val() as DailyStatsMap);
+      } else {
+        callback({});
+      }
+    });
+  }
+
+  /**
+   * Tùy chọn tự động dọn dẹp các log chi tiết trong /security/alerts cũ hơn X ngày
+   * Lưu ý: Giữ nguyên /stats/daily để không mất dữ liệu báo cáo lịch sử.
+   */
+  public static async purgeOldAlerts(daysOlderThan: number = 30, userEmail?: string): Promise<number> {
+    const cutoffTime = Date.now() - daysOlderThan * 24 * 60 * 60 * 1000;
+    const alertsQuery = query(ref(db, "security/alerts"), orderByChild("timestamp"));
+    const snapshot = await get(alertsQuery);
+    if (!snapshot.exists()) return 0;
+
+    const val = snapshot.val();
+    let deletedCount = 0;
+    const updates: Record<string, null> = {};
+    for (const key of Object.keys(val)) {
+      if (val[key].timestamp && val[key].timestamp < cutoffTime) {
+        updates[`security/alerts/${key}`] = null;
+        deletedCount++;
+      }
+    }
+    if (deletedCount > 0) {
+      await update(ref(db), updates);
+      if (userEmail) {
+        await this.logAudit(userEmail, "UPDATE_CONFIG", `Dọn dẹp ${deletedCount} nhật ký chi tiết cũ hơn ${daysOlderThan} ngày`);
+      }
+    }
+    return deletedCount;
   }
 }

@@ -237,6 +237,7 @@ export const App: React.FC = () => {
         <AlertsList
           alerts={alerts}
           auditLogs={auditLogs}
+          userEmail={userEmail}
         />
       </div>
 

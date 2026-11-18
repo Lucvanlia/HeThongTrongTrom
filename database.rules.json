@@ -34,6 +34,13 @@
       "alerts": {
         ".indexOn": ["timestamp"]
       }
+    },
+    "stats": {
+      "daily": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".indexOn": [".key"]
+      }
     }
   }
 }

@@ -51,6 +51,26 @@ export interface AuditLogItem {
   detail: string;
 }
 
+export interface DailyTotal {
+  passby: number;
+  alert: number;
+  pir: number;
+  sonar: number;
+  both: number;
+}
+
+export interface HourlyCount {
+  passby: number;
+  alert: number;
+}
+
+export interface DailyStatNode {
+  total: DailyTotal;
+  hours?: Record<string, HourlyCount>;
+}
+
+export type DailyStatsMap = Record<string, DailyStatNode>;
+
 export type ConnectionStatus = "CONNECTING" | "CONNECTED" | "DISCONNECTED" | "ERROR";
 
 export interface UserPrincipal {

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { TelemetryData } from "../types";
+import { FirebaseClient } from "../lib/firebaseClient";
 import { UserCheck, ShieldAlert, X, Eye } from "lucide-react";
 
 interface MotionAlertPopupProps {
@@ -91,6 +92,9 @@ export const MotionAlertPopup: React.FC<MotionAlertPopupProps> = ({ telemetry, i
         lastPopupTimeRef.current = now;
         if (!isMuted) playTone(true);
 
+        const sensorType = telemetry.distanceCm > 0 && telemetry.distanceCm <= 15 ? "BOTH" : "PIR";
+        FirebaseClient.recordDailyEvent("alert", sensorType, now);
+
         setPopup({
           id: now,
           type: "INTRUSION",
@@ -107,6 +111,8 @@ export const MotionAlertPopup: React.FC<MotionAlertPopupProps> = ({ telemetry, i
     else if (isPassing) {
       lastPopupTimeRef.current = now;
       if (!isMuted) playTone(false);
+
+      FirebaseClient.recordDailyEvent("passby", "PIR", now);
 
       const distText = telemetry.distanceCm > 0 ? `${telemetry.distanceCm} cm` : "trong tầm quét";
       setPopup({
