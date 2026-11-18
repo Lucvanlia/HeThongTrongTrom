@@ -8,12 +8,13 @@ interface KpiCardsProps {
 }
 
 export const KpiCards: React.FC<KpiCardsProps> = ({ telemetry, thresholdCm }) => {
+  const isOnline = telemetry?.status === "ONLINE";
   const armed = telemetry?.armed ?? false;
-  const alarm = telemetry?.alarm ?? false;
+  const alarm = isOnline ? (telemetry?.alarm ?? false) : false;
   const doorLocked = telemetry?.doorLocked ?? false;
-  const pirDetected = telemetry?.pirDetected ?? false;
-  const distanceCm = telemetry?.distanceCm ?? 0;
-  const isDistanceWarning = armed && distanceCm > 0 && distanceCm < thresholdCm;
+  const pirDetected = isOnline ? (telemetry?.pirDetected ?? false) : false;
+  const distanceCm = isOnline ? (telemetry?.distanceCm ?? 0) : 0;
+  const isDistanceWarning = isOnline && armed && distanceCm > 0 && distanceCm < thresholdCm;
 
   return (
     <div className="grid-kpi">
@@ -30,7 +31,9 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ telemetry, thresholdCm }) =>
               </h2>
             </div>
             <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>
-              {armed ? "Cảm biến sẵn sàng kích hoạt còi" : "Hệ thống tạm ngưng cảnh báo"}
+              {!isOnline 
+                ? "Lưu trạng thái gần nhất (Thiết bị OFFLINE)" 
+                : (armed ? "Cảm biến sẵn sàng kích hoạt còi" : "Hệ thống tạm ngưng cảnh báo")}
             </p>
           </div>
           <div style={{
@@ -57,7 +60,7 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ telemetry, thresholdCm }) =>
               </h2>
             </div>
             <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>
-              Servo SG90 Chốt Cửa (GPIO 19)
+              {!isOnline ? "Vị trí chốt lưu gần nhất" : "Servo SG90 Chốt Cửa (GPIO 19)"}
             </p>
           </div>
           <div style={{
@@ -79,12 +82,18 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ telemetry, thresholdCm }) =>
               Trạng Thái Báo Động
             </span>
             <div style={{ marginTop: "8px" }}>
-              <h2 style={{ fontSize: "1.35rem", fontWeight: 700, color: alarm ? "var(--rose-accent)" : "var(--text-primary)" }}>
-                {alarm ? "🚨 ĐANG HÚ CÒI!" : "YÊN TĨNH"}
+              <h2 style={{
+                fontSize: "1.35rem",
+                fontWeight: 700,
+                color: !isOnline ? "var(--text-muted)" : (alarm ? "var(--rose-accent)" : "var(--text-primary)")
+              }}>
+                {!isOnline ? "NGOẠI TUYẾN" : (alarm ? "🚨 ĐANG HÚ CÒI!" : "YÊN TĨNH")}
               </h2>
             </div>
             <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>
-              {alarm ? "Còi 23 & LED 2 nhấp nháy 2Hz" : "Không phát hiện xâm nhập"}
+              {!isOnline
+                ? "Thiết bị mất kết nối"
+                : (alarm ? "Còi 23 & LED 2 nhấp nháy 2Hz" : "Không phát hiện xâm nhập")}
             </p>
           </div>
           <div style={{
@@ -106,21 +115,27 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ telemetry, thresholdCm }) =>
               Hồng Ngoại PIR (HC-SR501)
             </span>
             <div style={{ marginTop: "8px" }}>
-              <h2 style={{ fontSize: "1.35rem", fontWeight: 700, color: pirDetected ? "var(--rose-accent)" : "var(--text-primary)" }}>
-                {pirDetected ? "PHÁT HIỆN" : "BÌNH THƯỜNG"}
+              <h2 style={{
+                fontSize: "1.35rem",
+                fontWeight: 700,
+                color: !isOnline ? "var(--text-muted)" : (pirDetected ? "var(--rose-accent)" : "var(--text-primary)")
+              }}>
+                {!isOnline ? "NGOẠI TUYẾN" : (pirDetected ? "PHÁT HIỆN" : "BÌNH THƯỜNG")}
               </h2>
             </div>
             <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>
-              {pirDetected ? "Có thân nhiệt chuyển động trong vùng" : "Không có chuyển động"}
+              {!isOnline
+                ? "Thiết bị ngắt kết nối (Dữ liệu cũ đóng băng)"
+                : (pirDetected ? "Có thân nhiệt chuyển động trong vùng" : "Không có chuyển động")}
             </p>
           </div>
           <div style={{
             padding: "10px",
             borderRadius: "10px",
-            background: pirDetected ? "rgba(244, 63, 94, 0.15)" : "rgba(255, 255, 255, 0.05)",
-            color: pirDetected ? "var(--rose-accent)" : "var(--text-muted)"
+            background: isOnline && pirDetected ? "rgba(244, 63, 94, 0.15)" : "rgba(255, 255, 255, 0.05)",
+            color: isOnline && pirDetected ? "var(--rose-accent)" : "var(--text-muted)"
           }}>
-            {pirDetected ? <Eye size={26} color="var(--rose-accent)" /> : <EyeOff size={26} />}
+            {isOnline && pirDetected ? <Eye size={26} color="var(--rose-accent)" /> : <EyeOff size={26} />}
           </div>
         </div>
       </div>
@@ -133,12 +148,16 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ telemetry, thresholdCm }) =>
               Cự Ly Siêu Âm (HC-SR04)
             </span>
             <div style={{ marginTop: "8px", display: "flex", alignItems: "baseline", gap: "6px" }}>
-              <h2 className="font-mono" style={{ fontSize: "1.75rem", fontWeight: 700, color: isDistanceWarning ? "var(--rose-accent)" : "var(--cyan-accent)" }}>
-                {distanceCm > 0 ? distanceCm : "--"}
+              <h2 className="font-mono" style={{
+                fontSize: "1.75rem",
+                fontWeight: 700,
+                color: !isOnline ? "var(--text-muted)" : (isDistanceWarning ? "var(--rose-accent)" : "var(--cyan-accent)")
+              }}>
+                {isOnline && distanceCm > 0 ? distanceCm : "--"}
               </h2>
               <span style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>cm</span>
               <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginLeft: "auto" }}>
-                Ngưỡng: &lt;{thresholdCm}cm
+                {!isOnline ? "Thiết bị ngoại tuyến" : `Ngưỡng: <${thresholdCm}cm`}
               </span>
             </div>
             
@@ -146,7 +165,7 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ telemetry, thresholdCm }) =>
             <div style={{ width: "100%", height: "6px", background: "rgba(255, 255, 255, 0.08)", borderRadius: "3px", marginTop: "10px", overflow: "hidden" }}>
               <div style={{
                 height: "100%",
-                width: `${Math.min(Math.max((distanceCm / 200) * 100, 2), 100)}%`,
+                width: isOnline ? `${Math.min(Math.max((distanceCm / 200) * 100, 2), 100)}%` : "0%",
                 background: isDistanceWarning 
                   ? "var(--rose-accent)" 
                   : "linear-gradient(90deg, var(--cyan-accent), var(--blue-accent))",
@@ -157,8 +176,8 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ telemetry, thresholdCm }) =>
           <div style={{
             padding: "10px",
             borderRadius: "10px",
-            background: isDistanceWarning ? "rgba(244, 63, 94, 0.15)" : "rgba(6, 182, 212, 0.15)",
-            color: isDistanceWarning ? "var(--rose-accent)" : "var(--cyan-accent)"
+            background: isOnline && isDistanceWarning ? "rgba(244, 63, 94, 0.15)" : "rgba(6, 182, 212, 0.15)",
+            color: isOnline && isDistanceWarning ? "var(--rose-accent)" : "var(--cyan-accent)"
           }}>
             <Radio size={26} />
           </div>
@@ -177,11 +196,11 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ telemetry, thresholdCm }) =>
                 IP: {telemetry?.ip || "Chưa có IP"}
               </div>
               <div className="font-mono" style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "2px" }}>
-                Sóng: {telemetry?.rssi ? `${telemetry.rssi} dBm` : "-- dBm"}
+                Sóng: {isOnline && telemetry?.rssi ? `${telemetry.rssi} dBm` : "Mất kết nối"}
               </div>
             </div>
             <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>
-              ID: {telemetry?.deviceId || "device_node_01"}
+              ID: {telemetry?.deviceId || "esp32-chongtrom-01"} • {isOnline ? "Đang kết nối" : "Ngoại tuyến"}
             </p>
           </div>
           <div style={{

@@ -60,29 +60,48 @@ export const App: React.FC = () => {
 
     // A. Lắng nghe luồng Telemetry
     const unsubTelemetry = FirebaseClient.subscribeTelemetry((newData) => {
-      lastArrivalRef.current = Date.now();
-      setTelemetry({ ...newData, status: "ONLINE" });
-      setWsStatus("CONNECTED");
-      setSecondsAgo(0);
+      const telemetryTime = newData.timestamp ? new Date(newData.timestamp).getTime() : 0;
+      const ageSeconds = telemetryTime > 0 ? Math.max(0, Math.floor((Date.now() - telemetryTime) / 1000)) : 9999;
+      const isFresh = ageSeconds <= OFFLINE_TIMEOUT_S;
 
-      setHistory((prev) => {
-        const newPoint: HistoryPoint = {
-          timestamp: new Date().toISOString(),
-          distanceCm: newData.distanceCm,
-          pirDetected: newData.pirDetected,
-          armed: newData.armed,
-          alarm: newData.alarm,
-          doorLocked: newData.doorLocked,
-          rssi: newData.rssi ?? 0
-        };
-        const next = [...prev, newPoint];
-        return next.slice(-100); // Giữ tối đa 100 điểm gần nhất
-      });
+      lastArrivalRef.current = telemetryTime > 0 ? telemetryTime : Date.now();
+      setSecondsAgo(ageSeconds);
+      setWsStatus("CONNECTED");
+
+      if (isFresh) {
+        setTelemetry({ ...newData, status: "ONLINE" });
+        setHistory((prev) => {
+          const newPoint: HistoryPoint = {
+            timestamp: new Date().toISOString(),
+            distanceCm: newData.distanceCm,
+            pirDetected: newData.pirDetected,
+            armed: newData.armed,
+            alarm: newData.alarm,
+            doorLocked: newData.doorLocked,
+            rssi: newData.rssi ?? 0
+          };
+          const next = [...prev, newPoint];
+          return next.slice(-100); // Giữ tối đa 100 điểm gần nhất
+        });
+      } else {
+        // Dữ liệu cũ (>15s): Đánh dấu thiết bị OFFLINE và XÓA TRẠNG THÁI PIR / BÁO ĐỘNG ĐÓNG BĂNG!
+        setTelemetry({
+          ...newData,
+          status: "OFFLINE",
+          pirDetected: false,
+          alarm: false
+        });
+      }
     });
 
     // B. Lắng nghe trạng thái thiết bị
     const unsubStatus = FirebaseClient.subscribeStatus((online) => {
-      setTelemetry((prev) => prev ? { ...prev, status: online ? "ONLINE" : "OFFLINE" } : null);
+      setTelemetry((prev) => prev ? {
+        ...prev,
+        status: online ? "ONLINE" : "OFFLINE",
+        pirDetected: online ? prev.pirDetected : false,
+        alarm: online ? prev.alarm : false
+      } : null);
     });
 
     // C. Lắng nghe nhật ký sự cố đột nhập (limitToLast 100)
@@ -123,9 +142,14 @@ export const App: React.FC = () => {
       const elapsed = Math.floor((Date.now() - lastArrivalRef.current) / 1000);
       setSecondsAgo(elapsed);
 
-      // Nếu quá 15 giây không có tin mới từ ESP32 -> đánh dấu OFFLINE
+      // Nếu quá 15 giây không có tin mới từ ESP32 -> đánh dấu OFFLINE và xóa trạng thái đóng băng
       if (elapsed > OFFLINE_TIMEOUT_S) {
-        setTelemetry((prev) => prev ? { ...prev, status: "OFFLINE" } : null);
+        setTelemetry((prev) => prev ? {
+          ...prev,
+          status: "OFFLINE",
+          pirDetected: false,
+          alarm: false
+        } : null);
       }
     }, 1000);
 

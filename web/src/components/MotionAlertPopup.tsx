@@ -80,6 +80,21 @@ export const MotionAlertPopup: React.FC<MotionAlertPopupProps> = ({ telemetry, i
   useEffect(() => {
     if (!telemetry) return;
 
+    // 1. NẾU THIẾT BỊ OFFLINE -> ĐÓNG TOAST NGAY VÀ KHÔNG KÍCH HOẠT THÔNG BÁO MỚI
+    if (telemetry.status === "OFFLINE") {
+      setPopup(null);
+      prevPirRef.current = false;
+      return;
+    }
+
+    // 2. KIỂM TRA ĐỘ MỚI CỦA BẢN TIN (CHỐNG LỖI DỮ LIỆU ĐÓNG BĂNG TRÊN ĐÁM MÂY)
+    // Nếu bản tin telemetry có tuổi đời > 12 giây so với thời điểm hiện tại -> BỎ QUA HOÀN TOÀN
+    const telemetryAgeMs = telemetry.timestamp ? Date.now() - new Date(telemetry.timestamp).getTime() : 999999;
+    if (telemetryAgeMs > 12000) {
+      prevPirRef.current = false;
+      return;
+    }
+
     const now = Date.now();
     const hasAlarm = telemetry.alarm === true;
     const pirActive = telemetry.pirDetected === true;

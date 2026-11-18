@@ -78,12 +78,12 @@ export const Header: React.FC<HeaderProps> = ({
           )}
 
           {/* Live Status Badge */}
-          <div className={`badge ${wsStatus === "CONNECTED" ? "badge-green" : wsStatus === "CONNECTING" ? "badge-amber" : "badge-red"}`}>
+          <div className={`badge ${!deviceOnline ? "badge-slate" : (wsStatus === "CONNECTED" ? "badge-green" : wsStatus === "CONNECTING" ? "badge-amber" : "badge-red")}`}>
             <Activity size={14} />
             <span>
-              {wsStatus === "CONNECTED" 
-                ? (secondsSinceLastHeartbeat !== null ? `LIVE (${secondsSinceLastHeartbeat}s trước)` : "LIVE") 
-                : wsStatus}
+              {!deviceOnline
+                ? (secondsSinceLastHeartbeat !== null ? `MẤT TÍN HIỆU (${secondsSinceLastHeartbeat}s trước)` : "OFFLINE")
+                : (secondsSinceLastHeartbeat !== null ? `LIVE (${secondsSinceLastHeartbeat}s trước)` : "LIVE")}
             </span>
           </div>
 
